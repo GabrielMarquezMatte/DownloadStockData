@@ -5,7 +5,7 @@ CREATE TABLE tcot_bovespa (
     cd_tpmerc INTEGER NOT NULL,
     cd_codbdi INTEGER NOT NULL,
     cd_codisin VARCHAR(26) NOT NULL,
-    nm_speci VARCHAR(11) NOT NULL,
+    nm_speci VARCHAR(11),
     prec_aber DOUBLE PRECISION NOT NULL,
     prec_max DOUBLE PRECISION NOT NULL,
     prec_min DOUBLE PRECISION NOT NULL,
