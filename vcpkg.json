@@ -1,0 +1,12 @@
+{
+    "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+    "name": "db-test",
+    "version": "0.0.1",
+    "dependencies": [
+        "libpqxx",
+        "curl",
+        "minizip",
+        "libzip",
+        "cxxopts"
+    ]
+}
