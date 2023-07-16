@@ -7,6 +7,8 @@ typedef struct CotBovespa_t
     std::tm dt_pregao;
     int cd_codbdi;
     std::string cd_codneg;
+    std::string cd_codisin;
+    std::string nm_speci;
     int cd_tpmerc;
     int prz_termo = -1;
     double prec_aber;
@@ -17,7 +19,6 @@ typedef struct CotBovespa_t
     double prec_exer;
     std::tm dt_datven;
     int fat_cot;
-    std::string cd_codisin;
     int nr_dismes;
 } CotBovespa;
 

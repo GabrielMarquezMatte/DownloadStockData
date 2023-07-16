@@ -14,9 +14,7 @@
 #include <cxxopts.hpp>
 
 static const std::string base_url = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_";
-static const std::string connection_string = "dbname=testdb user=postgres password=Dom,080203 hostaddr=127.0.0.1 port=5432";
 static std::mutex mtx;
-static const int num_threads = std::thread::hardware_concurrency();
 
 bool operator<(const std::tm &lhs, const std::tm &rhs)
 {
@@ -91,7 +89,7 @@ std::tm max_date_table(connection_pool &pool)
 {
     auto connection = pool.get_connection();
     pqxx::work work(*connection);
-    pqxx::result result = work.exec("SELECT MAX(dt_pregao) FROM tcot_bovespa");
+    pqxx::result result = work.exec("SELECT MAX(dt_pregao)+1 FROM tcot_bovespa");
     auto res1 = result[0];
     auto res2 = res1[0];
     if (res2.is_null())
@@ -110,17 +108,20 @@ std::tm max_date_table(connection_pool &pool)
 void execute_for_date(connection_pool &pool, http_client &client, const std::tm &date, const bool annual = false, const bool verbose = false)
 {
     auto start = std::chrono::high_resolution_clock::now();
+    auto date_str = date_to_string(date, "%d/%m/%Y");
     std::string url = get_url(date, annual);
     if(verbose)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        std::cout << "Downloading data for " << date_to_string(date, "%d/%m/%Y") << "\n";
+        auto now = get_current_date();
+        std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [EXECUTE_FOR_DATE] - Downloading data for " << date_str << "\n";
     }
     auto cotacoes = download_and_parse(client, url);
     if(verbose)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        std::cout << "Retrieved " << cotacoes.size() << " lines\n";
+        auto now = get_current_date();
+        std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [EXECUTE_FOR_DATE] - Retrieved " << cotacoes.size() << " lines for " << date_str << "\n";
     }
     insert_into_table(pool, cotacoes);
     auto end = std::chrono::high_resolution_clock::now();
@@ -128,13 +129,13 @@ void execute_for_date(connection_pool &pool, http_client &client, const std::tm 
     if(verbose)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        std::cout << "Done for " << date_to_string(date, "%d/%m/%Y") << " in " << elapsed.count() << " ms\n";
+        auto now = get_current_date();
+        std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [EXECUTE_FOR_DATE] - Done for " << date_to_string(date, "%d/%m/%Y") << " in " << elapsed.count() << " ms\n";
     }
 }
 
-void run_for_dates(const std::string &dates, connection_pool &pool, http_client &client, bool annual = false, bool verbose = false)
+void run_for_dates(const std::string &dates, connection_pool &pool, http_client &client, thread_pool& threads, bool annual = false, bool verbose = false)
 {
-    thread_pool threads(num_threads);
     std::istringstream ss(dates);
     std::string date;
     while (std::getline(ss, date, ','))
@@ -144,12 +145,11 @@ void run_for_dates(const std::string &dates, connection_pool &pool, http_client 
     }
 }
 
-void run_for_range(const std::string &start_date, const std::string &end_date, connection_pool &pool, http_client &client, bool verbose = false)
+void run_for_range(const std::string &start_date, const std::string &end_date, connection_pool &pool, http_client &client, thread_pool& threads, bool verbose = false)
 {
     std::tm start = get_date(start_date);
     std::tm end = get_date(end_date);
     std::tm current = start;
-    thread_pool threads(num_threads);
     while (current <= end)
     {
         threads.enqueue(execute_for_date, std::ref(pool), std::ref(client), current, false, verbose);
@@ -162,6 +162,8 @@ int main(int argc, char **argv, char **envp)
 {
     bool annual = false;
     bool verbose = false;
+    int num_threads = std::thread::hardware_concurrency();
+    std::string connection_string = "dbname=testdb user=postgres password=Dom,080203 hostaddr=127.0.0.1 port=5432";
     cxxopts::Options options("Bovespa downloader", "Download Bovespa data");
     options.add_options()
     ("a,annual", "Download annual data", cxxopts::value<bool>(annual))
@@ -169,6 +171,8 @@ int main(int argc, char **argv, char **envp)
     ("d,dates", "Download data for specific dates", cxxopts::value<std::string>())
     ("s,start-date", "Start date for download", cxxopts::value<std::string>())
     ("e,end-date", "End date for download", cxxopts::value<std::string>())
+    ("c,connection", "Connection string", cxxopts::value<std::string>(connection_string))
+    ("t,threads", "Number of threads", cxxopts::value<int>(num_threads)->default_value(std::to_string(num_threads)))
     ("h,help", "Print usage");
     auto result = options.parse(argc, argv);
     if (result.count("help"))
@@ -176,19 +180,38 @@ int main(int argc, char **argv, char **envp)
         std::cout << options.help() << "\n";
         return 0;
     }
-    connection_pool pool(connection_string, 40);
+    connection_pool pool(connection_string, num_threads);
     http_client client;
-    if (result.count("date"))
+    thread_pool threads(num_threads);
+    if (result.count("dates"))
     {
+        auto start = std::chrono::high_resolution_clock::now();
         std::string dates = result["dates"].as<std::string>();
-        run_for_dates(dates, pool, client, annual, verbose);
+        run_for_dates(dates, pool, client, threads, annual, verbose);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        if (verbose)
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            auto now = get_current_date();
+            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+        }
         return 0;
     }
     if (result.count("start-date") && result.count("end-date"))
     {
+        auto start = std::chrono::high_resolution_clock::now();
         std::string start_date = result["start-date"].as<std::string>();
         std::string end_date = result["end-date"].as<std::string>();
-        run_for_range(start_date, end_date, pool, client, verbose);
+        run_for_range(start_date, end_date, pool, client, threads, verbose);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        if (verbose)
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            auto now = get_current_date();
+            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+        }
         return 0;
     }
     auto start = std::chrono::high_resolution_clock::now();
@@ -196,16 +219,23 @@ int main(int argc, char **argv, char **envp)
     std::tm current_date = get_current_date();
     if (verbose)
     {
-        std::cout << "Max date in table: " << date_to_string(date, "%d/%m/%Y") << "\n";
-        std::cout << "Current date: " << date_to_string(current_date, "%d/%m/%Y") << "\n";
-        std::cout << "Downloading data...\n";
+        auto now = get_current_date();
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Max date in table: " << date_to_string(date, "%d/%m/%Y") << "\n";
+            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Current date: " << date_to_string(current_date, "%d/%m/%Y") << "\n";
+        }
     }
-    run_for_range(date_to_string(date, "%Y-%m-%d"), date_to_string(current_date, "%Y-%m-%d"), pool, client, verbose);
+    run_for_range(date_to_string(date, "%Y-%m-%d"), date_to_string(current_date, "%Y-%m-%d"), pool, client, threads, verbose);
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     if (verbose)
     {
-        std::cout << "Done in " << elapsed.count() << " ms\n";
+        auto now = get_current_date();
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+        }
     }
     return 0;
 }

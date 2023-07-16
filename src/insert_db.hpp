@@ -7,8 +7,8 @@ void insert_into_table(connection_pool &pool, const std::vector<CotBovespa> &dat
 {
     auto connection = pool.get_connection();
     const char* query = "INSERT INTO tcot_bovespa (dt_pregao, cd_codbdi, cd_codneg, cd_tpmerc, prz_termo, prec_aber, "
-                                   "prec_max, prec_min, prec_med, prec_fec, prec_exer, dt_datven, fat_cot, cd_codisin, nr_dismes) "
-                                   "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) "
+                                   "prec_max, prec_min, prec_med, prec_fec, prec_exer, dt_datven, fat_cot, cd_codisin, nr_dismes, nm_speci) "
+                                   "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) "
                                    "ON CONFLICT (dt_pregao, cd_codneg, prz_termo) DO NOTHING;";
     connection->prepare("insert_cotbovespa", query);
     pqxx::work transaction(*connection);
@@ -22,7 +22,7 @@ void insert_into_table(connection_pool &pool, const std::vector<CotBovespa> &dat
         // Execute prepared SQL statement with values
         transaction.exec_prepared("insert_cotbovespa", dt_pregao_stream.str(), item.cd_codbdi, item.cd_codneg, item.cd_tpmerc, item.prz_termo, item.prec_aber, 
                           item.prec_max, item.prec_min, item.prec_med, item.prec_fec, item.prec_exer, dt_datven_stream.str(), 
-                          item.fat_cot, item.cd_codisin, item.nr_dismes);
+                          item.fat_cot, item.cd_codisin, item.nr_dismes, item.nm_speci);
     }
     transaction.commit();
     connection->unprepare("insert_cotbovespa");
