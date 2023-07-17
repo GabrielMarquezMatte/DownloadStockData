@@ -7,7 +7,7 @@
 class thread_pool
 {
 public:
-    thread_pool(const size_t thread_count) noexcept
+    thread_pool(const size_t thread_count)
     {
         for (size_t i = 0; i < thread_count; ++i)
         {
