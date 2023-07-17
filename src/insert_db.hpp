@@ -10,12 +10,7 @@ void insert_into_table(connection_pool &pool, const std::vector<CotBovespa> &dat
     const char *query = "INSERT INTO tcot_bovespa (dt_pregao, cd_codbdi, cd_codneg, cd_tpmerc, prz_termo, prec_aber, "
                         "prec_max, prec_min, prec_med, prec_fec, prec_exer, dt_datven, fat_cot, cd_codisin, nr_dismes, nm_speci) "
                         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) "
-                        "ON CONFLICT (dt_pregao, cd_codneg, prz_termo) DO UPDATE SET "
-                        "cd_codbdi = EXCLUDED.cd_codbdi, cd_tpmerc = EXCLUDED.cd_tpmerc, prec_aber = EXCLUDED.prec_aber, "
-                        "prec_max = EXCLUDED.prec_max, prec_min = EXCLUDED.prec_min, prec_med = EXCLUDED.prec_med, "
-                        "prec_fec = EXCLUDED.prec_fec, prec_exer = EXCLUDED.prec_exer, dt_datven = EXCLUDED.dt_datven, "
-                        "fat_cot = EXCLUDED.fat_cot, cd_codisin = EXCLUDED.cd_codisin, nr_dismes = EXCLUDED.nr_dismes, "
-                        "nm_speci = EXCLUDED.nm_speci";
+                        "ON CONFLICT (dt_pregao, cd_codneg, prz_termo) DO NOTHING;";
     connection->prepare("insert_cotbovespa", query);
     pqxx::work transaction(*connection);
     for (const auto &item : data)
