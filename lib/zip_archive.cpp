@@ -25,8 +25,6 @@ std::vector<std::string> zip_archive::get_filenames()
         const char *filename = zip_get_name(zip_file, i, ZIP_FL_ENC_GUESS);
         if (filename == nullptr)
         {
-            zip_close(zip_file);
-            zip_source_free(zip_source);
             throw std::runtime_error("Failed to get filename");
         }
         filenames.push_back(filename);
@@ -40,27 +38,22 @@ std::string zip_archive::get_file_content(const std::string& filename)
     zip_stat_t stat;
     if (zip_stat(zip_file, filename.c_str(), ZIP_FL_ENC_GUESS, &stat) != 0)
     {
-        zip_close(zip_file);
-        zip_source_free(zip_source);
         throw std::runtime_error("Failed to get file stat");
     }
     zip_file_t *file = zip_fopen(zip_file, filename.c_str(), ZIP_FL_ENC_GUESS);
     if (file == nullptr)
     {
-        zip_close(zip_file);
-        zip_source_free(zip_source);
         throw std::runtime_error("Failed to open file");
     }
-    char *buffer = new char[stat.size];
-    if (zip_fread(file, buffer, stat.size) < 0)
+    std::unique_ptr<char[]> buffer(new char[stat.size]);
+    if (zip_fread(file, buffer.get(), stat.size) < 0)
     {
         zip_fclose(file);
         zip_close(zip_file);
         zip_source_free(zip_source);
         throw std::runtime_error("Failed to read file");
     }
-    content = std::string(buffer, stat.size);
-    delete[] buffer;
+    content = std::string(buffer.get(), stat.size);
     zip_fclose(file);
     return content;
 }

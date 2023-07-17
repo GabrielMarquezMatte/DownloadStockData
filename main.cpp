@@ -16,7 +16,7 @@
 static const std::string base_url = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_";
 static std::mutex mtx;
 
-bool operator<(const std::tm &lhs, const std::tm &rhs)
+bool operator<(const std::tm &lhs, const std::tm &rhs) noexcept
 {
     if (lhs.tm_year < rhs.tm_year)
         return true;
@@ -33,12 +33,12 @@ bool operator<(const std::tm &lhs, const std::tm &rhs)
     return false;
 }
 
-bool operator==(const std::tm &lhs, const std::tm &rhs)
+bool operator==(const std::tm &lhs, const std::tm &rhs) noexcept
 {
     return lhs.tm_year == rhs.tm_year && lhs.tm_mon == rhs.tm_mon && lhs.tm_mday == rhs.tm_mday;
 }
 
-bool operator<=(const std::tm &lhs, const std::tm &rhs)
+bool operator<=(const std::tm &lhs, const std::tm &rhs) noexcept
 {
     return lhs < rhs || lhs == rhs;
 }
@@ -50,7 +50,7 @@ std::string date_to_string(const std::tm &date, const std::string &format)
     return std::string(buffer);
 }
 
-std::string get_url(const std::tm &date, const bool annual)
+std::string get_url(const std::tm &date, const bool annual) noexcept
 {
     std::string url = base_url;
     url += annual ? "A" : "D";
