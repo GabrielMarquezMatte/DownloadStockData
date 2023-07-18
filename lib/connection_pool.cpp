@@ -10,6 +10,14 @@ connection_pool::connection_pool(const std::string& connection_string, int pool_
     }
 }
 
+connection_pool::~connection_pool()
+{
+    while(!connections_.empty())
+    {
+        connections_.pop();
+    }
+}
+
 connection_pool::connection_ptr connection_pool::get_connection() noexcept
 {
     std::unique_lock<std::mutex> lock(mutex_);

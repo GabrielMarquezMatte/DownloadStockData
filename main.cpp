@@ -48,6 +48,13 @@ bool operator >(const std::tm &lhs, const std::tm &rhs) noexcept
     return !(lhs <= rhs);
 }
 
+static std::ostream &operator<<(std::ostream &os, const std::chrono::time_point<std::chrono::system_clock> &tp)
+{
+    std::time_t t = std::chrono::system_clock::to_time_t(tp);
+    os << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S.%f");
+    return os;
+}
+
 std::string date_to_string(const std::tm &date, const std::string &format)
 {
     char buffer[80];
@@ -195,7 +202,7 @@ int main(int argc, char **argv, char **envp)
     bool annual = false;
     bool verbose = false;
     int num_threads = std::thread::hardware_concurrency();
-    std::string connection_string = "dbname=testdb user=postgres password=Dom,080203 hostaddr=127.0.0.1 port=5432";
+    std::string connection_string = "dbname=testdb user=postgres password=postgres hostaddr=127.0.0.1 port=5432";
     cxxopts::Options options("Bovespa downloader", "Download Bovespa data");
     options.add_options()
     ("a,annual", "Download annual data", cxxopts::value<bool>(annual))

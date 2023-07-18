@@ -1,5 +1,6 @@
 #include "../include/zip_archive.hpp"
 #include <iostream>
+#include <memory>
 
 zip_archive::zip_archive(const std::string& content_buffer)
 {

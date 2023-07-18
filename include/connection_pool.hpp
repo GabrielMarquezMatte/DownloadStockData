@@ -11,6 +11,7 @@ class connection_pool
 public:
     using connection_ptr = std::shared_ptr<pqxx::connection>;
     connection_pool(const std::string& connection_string, int pool_size);
+    ~connection_pool();
     connection_ptr get_connection() noexcept;
     void return_connection(connection_ptr connection);
 
