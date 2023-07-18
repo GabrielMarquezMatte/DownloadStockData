@@ -21,7 +21,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE libpqxx::pqxx)
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(${PROJECT_NAME} PRIVATE http_client zip_archive connection_pool)
-target_link_libraries(${PROJECT_NAME} PRIVATE formatting_download)
+target_link_libraries(${PROJECT_NAME} PRIVATE formatting_download insert_db)
 target_link_libraries(${PROJECT_NAME} PRIVATE cxxopts::cxxopts)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})

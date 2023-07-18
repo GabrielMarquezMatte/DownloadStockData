@@ -43,6 +43,11 @@ bool operator<=(const std::tm &lhs, const std::tm &rhs) noexcept
     return lhs < rhs || lhs == rhs;
 }
 
+bool operator >(const std::tm &lhs, const std::tm &rhs) noexcept
+{
+    return !(lhs <= rhs);
+}
+
 std::string date_to_string(const std::tm &date, const std::string &format)
 {
     char buffer[80];
@@ -105,6 +110,28 @@ std::tm max_date_table(connection_pool &pool)
     return date;
 }
 
+void unique_values(std::vector<CotBovespa> &cotacoes)
+{
+    std::sort(cotacoes.begin(), cotacoes.end(), [](const CotBovespa &lhs, const CotBovespa &rhs) {
+        if (lhs.dt_pregao < rhs.dt_pregao)
+            return true;
+        if (lhs.dt_pregao > rhs.dt_pregao)
+            return false;
+        if (lhs.prz_termo < rhs.prz_termo)
+            return true;
+        if (lhs.prz_termo > rhs.prz_termo)
+            return false;
+        if (lhs.cd_codneg < rhs.cd_codneg)
+            return true;
+        if (lhs.cd_codneg > rhs.cd_codneg)
+            return false;
+        return false;
+    });
+    cotacoes.erase(std::unique(cotacoes.begin(), cotacoes.end(), [](const CotBovespa &lhs, const CotBovespa &rhs) {
+        return lhs.dt_pregao == rhs.dt_pregao && lhs.prz_termo == rhs.prz_termo && lhs.cd_codneg == rhs.cd_codneg;
+    }), cotacoes.end());
+}
+
 void execute_for_date(connection_pool &pool, http_client &client, const std::tm &date, const bool annual = false, const bool verbose = false)
 {
     auto start = std::chrono::high_resolution_clock::now();
@@ -113,24 +140,29 @@ void execute_for_date(connection_pool &pool, http_client &client, const std::tm 
     if(verbose)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        auto now = get_current_date();
-        std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [EXECUTE_FOR_DATE] - Downloading data for " << date_str << "\n";
+        auto now = std::chrono::system_clock::now();
+        std::cout << now << " - [EXECUTE_FOR_DATE] - Downloading data for " << date_str << "\n";
     }
     auto cotacoes = download_and_parse(client, url);
     if(verbose)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        auto now = get_current_date();
-        std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [EXECUTE_FOR_DATE] - Retrieved " << cotacoes.size() << " lines for " << date_str << "\n";
+        auto now = std::chrono::system_clock::now();
+        std::cout << now << " - [EXECUTE_FOR_DATE] - Retrieved " << cotacoes.size() << " lines for " << date_str << "\n";
     }
+    if(cotacoes.empty())
+    {
+        return;
+    }
+    unique_values(cotacoes);
     insert_into_table(pool, cotacoes);
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     if(verbose)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        auto now = get_current_date();
-        std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [EXECUTE_FOR_DATE] - Done for " << date_to_string(date, "%d/%m/%Y") << " in " << elapsed.count() << " ms\n";
+        auto now = std::chrono::system_clock::now();
+        std::cout << now << " - [EXECUTE_FOR_DATE] - Done for " << date_to_string(date, "%d/%m/%Y") << " in " << elapsed.count() << " ms\n";
     }
 }
 
@@ -193,8 +225,8 @@ int main(int argc, char **argv, char **envp)
         if (verbose)
         {
             std::unique_lock<std::mutex> lock(mtx);
-            auto now = get_current_date();
-            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+            auto now = std::chrono::system_clock::now();
+            std::cout << now << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
         }
         return 0;
     }
@@ -209,8 +241,8 @@ int main(int argc, char **argv, char **envp)
         if (verbose)
         {
             std::unique_lock<std::mutex> lock(mtx);
-            auto now = get_current_date();
-            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+            auto now = std::chrono::system_clock::now();
+            std::cout << now << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
         }
         return 0;
     }
@@ -219,11 +251,11 @@ int main(int argc, char **argv, char **envp)
     std::tm current_date = get_current_date();
     if (verbose)
     {
-        auto now = get_current_date();
+        auto now = std::chrono::system_clock::now();
         {
             std::unique_lock<std::mutex> lock(mtx);
-            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Max date in table: " << date_to_string(date, "%d/%m/%Y") << "\n";
-            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Current date: " << date_to_string(current_date, "%d/%m/%Y") << "\n";
+            std::cout << now << " - [MAIN] - Max date in table: " << date_to_string(date, "%d/%m/%Y") << "\n";
+            std::cout << now << " - [MAIN] - Current date: " << date_to_string(current_date, "%d/%m/%Y") << "\n";
         }
     }
     run_for_range(date_to_string(date, "%Y-%m-%d"), date_to_string(current_date, "%Y-%m-%d"), pool, client, threads, verbose);
@@ -231,10 +263,10 @@ int main(int argc, char **argv, char **envp)
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     if (verbose)
     {
-        auto now = get_current_date();
+        auto now = std::chrono::system_clock::now();
         {
             std::unique_lock<std::mutex> lock(mtx);
-            std::cout << date_to_string(now,"%Y-%m-%d %H:%M:%S") << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+            std::cout << now << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
         }
     }
     return 0;

@@ -5,7 +5,6 @@
     "dependencies": [
         "libpqxx",
         "curl",
-        "minizip",
         "libzip",
         "cxxopts"
     ]
