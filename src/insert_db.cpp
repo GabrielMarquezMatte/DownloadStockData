@@ -20,16 +20,6 @@ static bool operator<(const std::tm &lhs, const std::tm &rhs) noexcept
     return false;
 }
 
-static bool operator==(const std::tm &lhs, const std::tm &rhs) noexcept
-{
-    return lhs.tm_year == rhs.tm_year && lhs.tm_mon == rhs.tm_mon && lhs.tm_mday == rhs.tm_mday;
-}
-
-static bool operator<=(const std::tm &lhs, const std::tm &rhs) noexcept
-{
-    return lhs < rhs || lhs == rhs;
-}
-
 void insert_into_table(connection_pool &pool, const std::vector<CotBovespa> &data)
 {
     auto connection = pool.get_connection();

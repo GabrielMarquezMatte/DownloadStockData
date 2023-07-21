@@ -51,7 +51,6 @@ std::string zip_archive::get_file_content(const std::string& filename)
     {
         zip_fclose(file);
         zip_close(zip_file);
-        zip_source_free(zip_source);
         throw std::runtime_error("Failed to read file");
     }
     content = std::string(buffer.get(), stat.size);
