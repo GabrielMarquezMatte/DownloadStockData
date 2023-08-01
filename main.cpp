@@ -205,7 +205,7 @@ int main(int argc, char **argv)
     bool annual = false;
     bool verbose = false;
     unsigned int num_threads = std::thread::hardware_concurrency();
-    std::string connection_string = "dbname=testdb user=postgres password=Dom,080203 hostaddr=127.0.0.1 port=5432";
+    std::string connection_string = "dbname=testdb user=postgres password=postgres hostaddr=127.0.0.1 port=5432";
     cxxopts::Options options("Bovespa downloader", "Download Bovespa data");
     options.add_options()("a,annual", "Download annual data", cxxopts::value<bool>(annual))("v,verbose", "Verbose output", cxxopts::value<bool>(verbose))("d,dates", "Download data for specific dates", cxxopts::value<std::string>())("s,start-date", "Start date for download", cxxopts::value<std::string>())("e,end-date", "End date for download", cxxopts::value<std::string>())("c,connection", "Connection string", cxxopts::value<std::string>(connection_string))("t,threads", "Number of threads", cxxopts::value<unsigned int>(num_threads)->default_value(std::to_string(num_threads)))("h,help", "Print usage");
     auto result = options.parse(argc, argv);
