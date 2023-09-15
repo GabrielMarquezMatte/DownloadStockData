@@ -51,6 +51,7 @@ jobs:
       shell: bash
       run: |
         echo "set(VCPKG_BUILD_TYPE release)" >> vcpkg/triplets/x64-${{ env.os_name }}.cmake
+        cat vcpkg/triplets/x64-${{ env.os_name }}.cmake
 
     - name: Set reusable strings
       id: strings
@@ -74,6 +75,7 @@ jobs:
       id: create_release
       uses: actions/create-release@v1
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
         tag_name: ${{ github.ref }}
         release_name: Release ${{ github.ref }}
         draft: false
