@@ -101,6 +101,9 @@ jobs:
         draft: false
         prerelease: false
 
+    - run: echo "Does GITHUB_TOKEN exist? ${{ env.GITHUB_TOKEN != '' }}"
+      shell: bash
+
     - name: Upload Release Asset (Windows)
       if: matrix.os == 'windows-latest'
       id: upload_release_asset_windows
@@ -110,6 +113,8 @@ jobs:
         asset_path: ${{ steps.strings.outputs.build-output-dir }}/Release/*
         asset_name: windows-Release.zip
         asset_content_type: application/zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Release Asset (Other OS)
       if: matrix.os != 'windows-latest'
@@ -120,3 +125,5 @@ jobs:
         asset_path: ${{ steps.strings.outputs.build-output-dir }}/DbTest
         asset_name: DbTest-${{ matrix.os }}-${{ matrix.build_type }}-${{ matrix.cpp_compiler }}.bin
         asset_content_type: application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
