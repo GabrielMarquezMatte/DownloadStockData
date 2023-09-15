@@ -45,7 +45,12 @@ jobs:
       shell: bash
       run: |
         os_name=${{ matrix.os }}
-        echo "os_name=${os_name%-latest}" >> $GITHUB_ENV
+        if [[ "$os_name" == "ubuntu-latest" ]]; then
+          os_name="linux"
+        else
+          os_name=${os_name%-latest}
+        fi
+        echo "os_name=$os_name" >> $GITHUB_ENV
 
     - name: Build only Release Mode
       shell: bash
