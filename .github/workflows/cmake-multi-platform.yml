@@ -14,7 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        os_name: [ubuntu, windows]
         build_type: [Release]
         c_compiler: [gcc, clang, cl]
         include:
@@ -40,11 +39,18 @@ jobs:
 
     - name: Clone vcpkg
       run: git clone https://github.com/microsoft/vcpkg.git
+      
+    - name: Remove '-latest' from OS name
+      id: remove_latest
+      shell: bash
+      run: |
+        os_name=${{ matrix.os }}
+        echo "os_name=${os_name%-latest}" >> $GITHUB_ENV
 
     - name: Build only Release Mode
       shell: bash
       run: |
-        echo "set(VCPKG_BUILD_TYPE release)" >> vcpkg/triplets/x64-${{ matrix.os_name }}.cmake
+        echo "set(VCPKG_BUILD_TYPE release)" >> vcpkg/triplets/x64-${{ env.os_name }}.cmake
 
     - name: Set reusable strings
       id: strings
