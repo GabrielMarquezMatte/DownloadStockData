@@ -52,7 +52,6 @@ bool operator>(const std::tm &lhs, const std::tm &rhs) noexcept
 static std::ostream &operator<<(std::ostream &os, const std::chrono::time_point<std::chrono::system_clock> &tp)
 {
     std::time_t t = std::chrono::system_clock::to_time_t(tp);
-#pragma warning(suppress : 4996)
     os << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S.%f");
     return os;
 }
