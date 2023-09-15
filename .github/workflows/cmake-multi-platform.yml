@@ -78,6 +78,7 @@ jobs:
 
     - name: Generate tag and release names
       id: generate_names
+      shell: bash
       run: |
         ref=${{ github.ref }}
         if [[ "$ref" == refs/heads/* ]]; then
