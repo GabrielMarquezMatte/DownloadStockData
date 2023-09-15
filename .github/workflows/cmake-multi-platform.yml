@@ -14,6 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        os_name: [ubuntu, windows]
         build_type: [Release]
         c_compiler: [gcc, clang, cl]
         include:
@@ -40,6 +41,11 @@ jobs:
     - name: Clone vcpkg
       run: git clone https://github.com/microsoft/vcpkg.git
 
+    - name: Build only Release Mode
+      shell: bash
+      run: |
+        echo "set(VCPKG_BUILD_TYPE release)" >> vcpkg/triplets/x64-${{ matrix.os_name }}.cmake
+
     - name: Set reusable strings
       id: strings
       shell: bash
@@ -57,3 +63,32 @@ jobs:
 
     - name: Build
       run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset (Windows)
+      if: matrix.os == 'windows-latest'
+      id: upload_release_asset_windows
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ steps.strings.outputs.build-output-dir }}/Release/*
+        asset_name: windows-Release.zip
+        asset_content_type: application/zip
+
+    - name: Upload Release Asset (Other OS)
+      if: matrix.os != 'windows-latest'
+      id: upload_release_asset_others
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ steps.strings.outputs.build-output-dir }}/DbTest
+        asset_name: DbTest-${{ matrix.os }}-${{ matrix.build_type }}.bin
+        asset_content_type: application/octet-stream
