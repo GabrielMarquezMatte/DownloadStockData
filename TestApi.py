@@ -12,7 +12,7 @@ async def main():
     async with aiohttp.ClientSession() as session:
         start = dt.datetime.now()
         async with asyncio.TaskGroup() as group:
-            for _ in range(1000):
+            for _ in range(10000):
                 group.create_task(get(url, session))
         end = dt.datetime.now()
         print(f"Time: {end - start}")
