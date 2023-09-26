@@ -95,7 +95,7 @@ jobs:
     - name: Check if Release Exists
       id: check_release
       run: |
-        release_name="${{ env.release_name }}"
+        release_name="${{ env.release_name }}-${{ matrix.os }}-${{ matrix.cpp_compiler }}"
         releases=$(curl --header "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/$GITHUB_REPOSITORY/releases")
         exists=$(echo "$releases" | jq ".[] | select(.name==\"$release_name\")")
         if [ -n "$exists" ]; then
@@ -114,7 +114,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ env.tag_name }}
-        release_name: ${{ env.release_name }}
+        release_name: ${{ env.release_name }}-${{ matrix.os }}-${{ matrix.cpp_compiler }}
         draft: false
         prerelease: false
 
