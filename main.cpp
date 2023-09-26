@@ -141,6 +141,16 @@ void unique_values(std::vector<CotBovespa> &cotacoes)
                    cotacoes.end());
 }
 
+template <typename... Args>
+void log_data(std::mutex &mutex, Args &&...args)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    auto now = std::chrono::system_clock::now();
+    std::cout << now;
+    (std::cout << ... << args);
+    std::cout << "\n";
+}
+
 void execute_for_date(connection_pool &pool, http_client &client, const std::tm &date, const bool annual = false, const bool verbose = false)
 {
     auto start = std::chrono::high_resolution_clock::now();
@@ -148,16 +158,13 @@ void execute_for_date(connection_pool &pool, http_client &client, const std::tm 
     std::string url = get_url(date, annual);
     if (verbose)
     {
-        std::unique_lock<std::mutex> lock(mtx);
-        auto now = std::chrono::system_clock::now();
-        std::cout << now << " - [EXECUTE_FOR_DATE] - Downloading data for " << date_str << "\n";
+        log_data(mtx, " - [EXECUTE_FOR_DATE] - Downloading data for ", date_str);
     }
     auto cotacoes = download_and_parse(client, url);
     if (verbose)
     {
-        std::unique_lock<std::mutex> lock(mtx);
-        auto now = std::chrono::system_clock::now();
-        std::cout << now << " - [EXECUTE_FOR_DATE] - Retrieved " << cotacoes.size() << " lines for " << date_str << "\n";
+        log_data(mtx, " - [EXECUTE_FOR_DATE] - Downloaded data for ", date_str);
+        log_data(mtx, " - [EXECUTE_FOR_DATE] - Retrieved ", cotacoes.size(), " lines for ", date_str);
     }
     if (cotacoes.empty())
     {
@@ -169,9 +176,7 @@ void execute_for_date(connection_pool &pool, http_client &client, const std::tm 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     if (verbose)
     {
-        std::unique_lock<std::mutex> lock(mtx);
-        auto now = std::chrono::system_clock::now();
-        std::cout << now << " - [EXECUTE_FOR_DATE] - Done for " << date_to_string(date, "%d/%m/%Y") << " in " << elapsed.count() << " ms\n";
+        log_data(mtx, " - [EXECUTE_FOR_DATE] - Done for ", date_to_string(date, "%d/%m/%Y"), " in ", elapsed.count(), " ms");
     }
 }
 
@@ -206,7 +211,15 @@ int main(int argc, char **argv)
     unsigned int num_threads = std::thread::hardware_concurrency();
     std::string connection_string = "dbname=testdb user=postgres password=postgres hostaddr=127.0.0.1 port=5432";
     cxxopts::Options options("Bovespa downloader", "Download Bovespa data");
-    options.add_options()("a,annual", "Download annual data", cxxopts::value<bool>(annual))("v,verbose", "Verbose output", cxxopts::value<bool>(verbose))("d,dates", "Download data for specific dates", cxxopts::value<std::string>())("s,start-date", "Start date for download", cxxopts::value<std::string>())("e,end-date", "End date for download", cxxopts::value<std::string>())("c,connection", "Connection string", cxxopts::value<std::string>(connection_string))("t,threads", "Number of threads", cxxopts::value<unsigned int>(num_threads)->default_value(std::to_string(num_threads)))("h,help", "Print usage");
+    options.add_options()
+    ("a,annual", "Download annual data", cxxopts::value<bool>(annual))
+    ("v,verbose", "Verbose output", cxxopts::value<bool>(verbose))
+    ("d,dates", "Download data for specific dates", cxxopts::value<std::string>())
+    ("s,start-date", "Start date for download", cxxopts::value<std::string>())
+    ("e,end-date", "End date for download", cxxopts::value<std::string>())
+    ("c,connection", "Connection string", cxxopts::value<std::string>(connection_string))
+    ("t,threads", "Number of threads", cxxopts::value<unsigned int>(num_threads)->default_value(std::to_string(num_threads)))
+    ("h,help", "Print usage");
     auto result = options.parse(argc, argv);
     if (result.count("help"))
     {
@@ -225,9 +238,7 @@ int main(int argc, char **argv)
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         if (verbose)
         {
-            std::unique_lock<std::mutex> lock(mtx);
-            auto now = std::chrono::system_clock::now();
-            std::cout << now << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+            log_data(mtx, " - [MAIN] - Done in ", elapsed.count(), " ms");
         }
         return 0;
     }
@@ -241,9 +252,7 @@ int main(int argc, char **argv)
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         if (verbose)
         {
-            std::unique_lock<std::mutex> lock(mtx);
-            auto now = std::chrono::system_clock::now();
-            std::cout << now << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
+            log_data(mtx, " - [MAIN] - Done in ", elapsed.count(), " ms");
         }
         return 0;
     }
@@ -252,23 +261,15 @@ int main(int argc, char **argv)
     std::tm current_date = get_current_date();
     if (verbose)
     {
-        auto now = std::chrono::system_clock::now();
-        {
-            std::unique_lock<std::mutex> lock(mtx);
-            std::cout << now << " - [MAIN] - Max date in table: " << date_to_string(date, "%d/%m/%Y") << "\n";
-            std::cout << now << " - [MAIN] - Current date: " << date_to_string(current_date, "%d/%m/%Y") << "\n";
-        }
+        log_data(mtx, " - [MAIN] - Max date in table: ", date_to_string(date, "%d/%m/%Y"));
+        log_data(mtx, " - [MAIN] - Current date: ", date_to_string(current_date, "%d/%m/%Y"));
     }
     run_for_range(date_to_string(date, "%Y-%m-%d"), date_to_string(current_date, "%Y-%m-%d"), pool, client, threads, verbose);
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     if (verbose)
     {
-        auto now = std::chrono::system_clock::now();
-        {
-            std::unique_lock<std::mutex> lock(mtx);
-            std::cout << now << " - [MAIN] - Done in " << elapsed.count() << " ms\n";
-        }
+        log_data(mtx, " - [MAIN] - Done in ", elapsed.count(), " ms");
     }
     return 0;
 }
