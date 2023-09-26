@@ -6,6 +6,8 @@
         "libpqxx",
         "curl",
         "libzip",
-        "cxxopts"
+        "cxxopts",
+        "restbed",
+        "nlohmann-json"
     ]
 }

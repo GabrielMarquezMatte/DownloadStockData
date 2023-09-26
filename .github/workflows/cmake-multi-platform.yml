@@ -82,8 +82,8 @@ jobs:
       run: |
         ref=${{ github.ref }}
         if [[ "$ref" == refs/heads/* ]]; then
-          tag_name="${ref#refs/heads/}-$(date +'%Y%m%d%H%M%S')"
-          release_name="Release for branch ${ref#refs/heads/} at $(date +'%Y-%m-%d %H:%M:%S')"
+          tag_name="${ref#refs/heads/}-$(date +'%Y%m%d%H')"
+          release_name="Release for branch ${ref#refs/heads/} at $(date +'%Y-%m-%d %H')"
         else
           tag_name="$ref"
           release_name="Release $ref"
@@ -105,13 +105,26 @@ jobs:
     - run: echo "Does GITHUB_TOKEN exist? ${{ env.GITHUB_TOKEN != '' }}"
       shell: bash
 
+    - name: List files in build directory
+      run: ls -R ${{ steps.strings.outputs.build-output-dir }}
+      shell: bash
+
+    - name: Zip Release Asset (Windows)
+      if: matrix.os == 'windows-latest'
+      id: zip_release_asset_windows
+      shell: bash
+      run: |
+        cd ${{ steps.strings.outputs.build-output-dir }}/Release
+        zip -r windows-Release.zip *
+        echo "build-output-dir=${{ steps.strings.outputs.build-output-dir }}" >> "$GITHUB_OUTPUT"
+
     - name: Upload Release Asset (Windows)
       if: matrix.os == 'windows-latest'
       id: upload_release_asset_windows
       uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ${{ steps.strings.outputs.build-output-dir }}/Release/*
+        asset_path: ${{ steps.strings.outputs.build-output-dir }}/Release/windows-Release.zip
         asset_name: windows-Release.zip
         asset_content_type: application/zip
       env:
@@ -123,8 +136,8 @@ jobs:
       uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ${{ steps.strings.outputs.build-output-dir }}/DbTest
-        asset_name: DbTest-${{ matrix.os }}-${{ matrix.build_type }}-${{ matrix.cpp_compiler }}.bin
+        asset_path: ${{ steps.strings.outputs.build-output-dir }}/DownloadStockData
+        asset_name: DownloadStockData-${{ matrix.os }}-${{ matrix.build_type }}-${{ matrix.cpp_compiler }}.bin
         asset_content_type: application/octet-stream
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

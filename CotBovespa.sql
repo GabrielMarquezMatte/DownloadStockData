@@ -17,3 +17,5 @@ CREATE TABLE tcot_bovespa (
     nr_dismes INTEGER NOT NULL,
     PRIMARY KEY (dt_pregao, prz_termo, cd_codneg)
 );
+
+CREATE INDEX CONCURRENTLY ON tcot_bovespa USING btree (cd_codneg, dt_pregao);
