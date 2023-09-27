@@ -29,6 +29,28 @@ void validation_error_response(const std::shared_ptr<restbed::Session> session, 
     session->close(restbed::UNPROCESSABLE_ENTITY, error_message, {{"Content-Length", std::to_string(error_message.length())}, {"Content-Type", APPLICATION_JSON}});
 }
 
+bool authenticate_user(const std::shared_ptr<restbed::Session> session, const std::string &api_key)
+{
+    if (api_key.empty())
+    {
+        return true;
+    }
+    const auto& request = session->get_request();
+    const auto& headers = request->get_headers();
+    const auto& auth_header = headers.find("X-Api-Key");
+    if (auth_header == headers.end())
+    {
+        session->close(restbed::UNAUTHORIZED, "{'error': 'Please provide an API key'}", {{"Content-Length", "38"}, {"Content-Type", APPLICATION_JSON}});
+        return false;
+    }
+    if (auth_header->second != api_key)
+    {
+        session->close(restbed::UNAUTHORIZED, "{'error': 'Invalid API key'}", {{"Content-Length", "28"}, {"Content-Type", APPLICATION_JSON}});
+        return false;
+    }
+    return true;
+}
+
 VALIDATION_ERROR validate_date(const std::string &start_date, const std::string &end_date)
 {
     std::istringstream start_date_stream(start_date);
@@ -107,8 +129,15 @@ int main(int argc, char **argv)
     int pool_size = 30;
     int port = 8080;
     unsigned int worker_limit = std::thread::hardware_concurrency();
+    std::string api_key;
     cxxopts::Options options("StockDataApi", "API for getting stock data");
-    options.add_options()("c,connection", "Connection string", cxxopts::value<std::string>(connection_string))("p,pool", "Pool size", cxxopts::value<int>(pool_size))("w,workers", "Worker limit", cxxopts::value<unsigned int>(worker_limit))("port", "Port", cxxopts::value<int>(port))("h,help", "Print usage");
+    options.add_options()
+        ("c,connection", "Connection string", cxxopts::value<std::string>(connection_string))
+        ("p,pool", "Pool size", cxxopts::value<int>(pool_size))
+        ("w,workers", "Worker limit", cxxopts::value<unsigned int>(worker_limit))
+        ("port", "Port", cxxopts::value<int>(port))
+        ("api_key", "API key", cxxopts::value<std::string>(api_key))
+        ("h,help", "Print usage");
     auto result = options.parse(argc, argv);
     if (result.count("help"))
     {
@@ -119,8 +148,17 @@ int main(int argc, char **argv)
     std::shared_ptr<restbed::Resource> stock_data_resource = std::make_shared<restbed::Resource>();
     stock_data_resource->set_path("/stock_data/{symbol: .*}");
     stock_data_resource->set_method_handler("GET", get_stock_data);
+    stock_data_resource->set_authentication_handler([api_key](const std::shared_ptr<restbed::Session> session, const std::function<void(const std::shared_ptr<restbed::Session>)>& callback)
+                                                    {
+                                                        bool authenticated = authenticate_user(session, api_key);
+                                                        if (!authenticated)
+                                                        {
+                                                            return;
+                                                        }
+                                                        callback(session);
+                                                    });
     std::shared_ptr<restbed::Settings> settings = std::make_shared<restbed::Settings>();
-    settings->set_port((const uint16_t)port);
+    settings->set_port((uint16_t)port);
     settings->set_default_header("Connection", "close");
     settings->set_default_header("Access-Control-Allow-Origin", "*");
     settings->set_keep_alive(false);
