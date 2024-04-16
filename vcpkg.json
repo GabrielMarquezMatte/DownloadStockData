@@ -8,6 +8,9 @@
         "libzip",
         "cxxopts",
         "restbed",
-        "nlohmann-json"
+        "nlohmann-json",
+        "spdlog",
+        "fmt",
+        "readerwriterqueue"
     ]
 }

@@ -1,167 +1,114 @@
 #include "formatting_download.hpp"
-#include "../include/zip_archive.hpp"
 #include <string>
-#include <vector>
-#include <sstream>
-#include <iomanip>
-#include <algorithm>
-#define white_space(c) ((c) == ' ' || (c) == '\t')
-#define valid_digit(c) ((c) >= '0' && (c) <= '9')
 
-std::tm parse_date(const std::string &date, const std::string &format = "%Y%m%d")
+std::tm parse_date(const std::string_view& date)
 {
-    std::tm tm = {};
-    std::stringstream ss(date);
-    ss >> std::get_time(&tm, format.c_str());
+    std::tm tm;
+    tm.tm_year = (date[0] - '0') * 1000 + (date[1] - '0') * 100 + (date[2] - '0') * 10 + (date[3] - '0') - 1900;
+    tm.tm_mon = (date[4] - '0') * 10 + (date[5] - '0') - 1;
+    tm.tm_mday = (date[6] - '0') * 10 + (date[7] - '0');
+    tm.tm_hour = 0;
+    tm.tm_min = 0;
+    tm.tm_sec = 0;
     return tm;
 }
 
-void remove_spaces(std::string &str)
+int parse_int(const std::string_view& str)
 {
-    str.erase(std::remove(str.begin(), str.end(), ' '), str.end());
+    int value = 0;
+    for (size_t i = 0; i < str.size(); i++)
+    {
+        if(str[i] >= '0' && str[i] <= '9') value = value * 10 + (str[i] - '0');
+    }
+    return value;
 }
 
-int fast_atoi(const char *p) {
-    int x = 0;
-    bool neg = false;
-    if (*p == '-') {
-        neg = true;
-        ++p;
-    }
-    while (*p >= '0' && *p <= '9') {
-        x = (x*10) + (*p - '0');
-        ++p;
-    }
-    if (neg) {
-        x = -x;
-    }
-    return x;
-}
-
-double fast_atof(const char *p)
+double parse_double(const std::string_view& str)
 {
-    int frac;
-    double sign, value, scale;
-    while (white_space(*p) ) {
-        p += 1;
-    }
-    sign = 1.0;
-    if (*p == '-') {
-        sign = -1.0;
-        p += 1;
-
-    } else if (*p == '+') {
-        p += 1;
-    }
-    for (value = 0.0; valid_digit(*p); p += 1) {
-        value = value * 10.0 + (*p - '0');
-    }
-    if (*p == '.') {
-        double pow10 = 10.0;
-        p += 1;
-        while (valid_digit(*p)) {
-            value += (*p - '0') / pow10;
-            pow10 *= 10.0;
-            p += 1;
-        }
-    }
-    frac = 0;
-    scale = 1.0;
-    if ((*p == 'e') || (*p == 'E')) {
-        unsigned int expon;
-        p += 1;
-        if (*p == '-') {
-            frac = 1;
-            p += 1;
-
-        } else if (*p == '+') {
-            p += 1;
-        }
-        for (expon = 0; valid_digit(*p); p += 1) {
-            expon = expon * 10 + (*p - '0');
-        }
-        if (expon > 308) expon = 308;
-        while (expon >= 50) { scale *= 1E50; expon -= 50; }
-        while (expon >=  8) { scale *= 1E8;  expon -=  8; }
-        while (expon >   0) { scale *= 10.0; expon -=  1; }
-    }
-    return sign * (frac ? (value / scale) : (value * scale));
+    uint64_t result = (str[0] - '0') * 1'000'000'000'000LL +
+                      (str[1] - '0') * 100'000'000'000LL +
+                      (str[2] - '0') * 10'000'000'000LL +
+                      (str[3] - '0') * 1'000'000'000LL +
+                      (str[4] - '0') * 100'000'000LL +
+                      (str[5] - '0') * 10'000'000LL +
+                      (str[6] - '0') * 1'000'000LL +
+                      (str[7] - '0') * 100'000LL +
+                      (str[8] - '0') * 10'000LL +
+                      (str[9] - '0') * 1'000LL +
+                      (str[10] - '0') * 100LL +
+                      (str[11] - '0') * 10LL +
+                      (str[12] - '0');
+    return result * 0.01;
 }
 
-int parse_int(std::string str)
-{
-    str.erase(std::remove(str.begin(), str.end(), ' '), str.end());
-    return str.empty() ? -1 : fast_atoi(str.c_str());
-}
-
-CotBovespa parse_line(const std::string &line)
+CotBovespa parse_line(const std::string_view &line)
 {
     CotBovespa cotacao;
-    cotacao.dt_pregao = parse_date(line.substr(2, 8).c_str());
-    cotacao.cd_codbdi = fast_atoi(line.substr(10, 2).c_str());
-    cotacao.cd_codneg = line.substr(12, 12);
-    remove_spaces(cotacao.cd_codneg);
-    cotacao.cd_tpmerc = fast_atoi(line.substr(24, 3).c_str());
-    cotacao.nm_speci = line.substr(39, 10);
-    cotacao.prz_termo = parse_int(line.substr(49, 3).c_str());
-    cotacao.prec_aber = fast_atof(line.substr(56, 13).c_str()) / 100;
-    cotacao.prec_max = fast_atof(line.substr(69, 13).c_str()) / 100;
-    cotacao.prec_min = fast_atof(line.substr(82, 13).c_str()) / 100;
-    cotacao.prec_med = fast_atof(line.substr(95, 13).c_str()) / 100;
-    cotacao.prec_fec = fast_atof(line.substr(108, 13).c_str()) / 100;
-    cotacao.prec_exer = fast_atof(line.substr(188, 13).c_str()) / 100;
-    cotacao.dt_datven = parse_date(line.substr(202, 8).c_str());
-    cotacao.fat_cot = fast_atoi(line.substr(210, 7).c_str());
-    cotacao.cd_codisin = line.substr(230, 12);
-    remove_spaces(cotacao.cd_codisin);
-    cotacao.nr_dismes = fast_atoi(line.substr(242, 3).c_str());
+    cotacao.dt_pregao = parse_date(line.substr(2, 8));
+    cotacao.cd_codbdi = parse_int(line.substr(10, 2));
+    std::string_view codneg = line.substr(12, 12);
+    std::copy(codneg.begin(), codneg.end(), cotacao.cd_codneg);
+    cotacao.cd_tpmerc = parse_int(line.substr(24, 3));
+    std::string_view nm_speci = line.substr(39, 10);
+    std::copy(nm_speci.begin(), nm_speci.end(), cotacao.nm_speci);
+    cotacao.prz_termo = parse_int(line.substr(49, 3));
+    cotacao.prec_aber = parse_double(line.substr(56, 13));
+    cotacao.prec_max = parse_double(line.substr(69, 13));
+    cotacao.prec_min = parse_double(line.substr(82, 13));
+    cotacao.prec_med = parse_double(line.substr(95, 13));
+    cotacao.prec_fec = parse_double(line.substr(108, 13));
+    cotacao.prec_exer = parse_double(line.substr(188, 13));
+    cotacao.dt_datven = parse_date(line.substr(202, 8));
+    cotacao.fat_cot = parse_int(line.substr(210, 7));
+    std::string_view codisin = line.substr(230, 12);
+    std::copy(codisin.begin(), codisin.end(), cotacao.cd_codisin);
+    cotacao.nr_dismes = parse_int(line.substr(242, 3));
     return cotacao;
 }
 
-bool check_line(const std::string& line)
+LineType check_line(const std::string_view& line)
 {
-    if(line.size() < 245)
-    {
-        return false;
-    }
-    bool valid = false;
-    for(int i = 42;i < 60; i++)
-    {
-        if(line[i] != ' ')
-        {
-            valid = true;
-            break;
-        }
-    }
-    return valid;
+    std::string_view start = line.substr(0, 3);
+    if(start == "00C") return LineType::START;
+    if(start == "99C") return LineType::END;
+    return LineType::QUOTE;
 }
 
-std::vector<CotBovespa> download_and_parse(http_client &client, const std::string &url)
+zip_archive download_zip(const std::string_view &url)
 {
-    std::vector<CotBovespa> cotacoes;
-    std::string content = client.get(url);
-    if(content.empty())
+    std::string content = http_client::get(url.data());
+    return zip_archive(content);
+}
+
+void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue)
+{
+    char line[247];
+    while(zip.next_line(line))
     {
-        return cotacoes;
-    }
-    zip_archive zip(content);
-    auto filenames = zip.get_filenames();
-    if(filenames.empty())
-    {
-        return cotacoes;
-    }
-    std::string filename = filenames[0];
-    std::string file_content = zip.get_file_content(filename);
-    std::stringstream ss(file_content);
-    std::string line;
-    std::getline(ss, line);
-    while (std::getline(ss, line))
-    {
-        if(!check_line(line))
+        LineType type = check_line(line);
+        switch(type)
         {
-            continue;
+            case LineType::END:
+                return;
+            case LineType::START:
+                continue;
+            case LineType::QUOTE:
+                CotBovespa cotacao = parse_line(line);
+                queue.enqueue(cotacao);
+                break;
         }
-        cotacoes.push_back(parse_line(line));
     }
-    return cotacoes;
+}
+
+LineType next_quote(zip_archive &zip, CotBovespa &cotacao)
+{
+    char line[247];
+    while(zip.next_line(line))
+    {
+        LineType type = check_line(line);
+        if(type != LineType::QUOTE) return type;
+        cotacao = parse_line(line);
+        return type;
+    }
+    return LineType::END;
 }

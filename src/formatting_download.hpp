@@ -1,14 +1,16 @@
 #pragma once
 #include "../include/http_client.hpp"
+#include "../include/zip_archive.hpp"
+#include <readerwriterqueue/readerwriterqueue.h>
 #include <ctime>
 
-typedef struct CotBovespa_t
+struct CotBovespa
 {
     std::tm dt_pregao;
     int cd_codbdi;
-    std::string cd_codneg;
-    std::string cd_codisin;
-    std::string nm_speci;
+    char cd_codneg[12];
+    char cd_codisin[12];
+    char nm_speci[10];
     int cd_tpmerc;
     int prz_termo = -1;
     double prec_aber;
@@ -20,6 +22,15 @@ typedef struct CotBovespa_t
     std::tm dt_datven;
     int fat_cot;
     int nr_dismes;
-} CotBovespa;
+};
 
-std::vector<CotBovespa> download_and_parse(http_client &client, const std::string &url);
+enum class LineType
+{
+    START,
+    QUOTE,
+    END,
+};
+
+zip_archive download_zip(const std::string_view &url);
+void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue);
+LineType next_quote(zip_archive &zip, CotBovespa &cotacao);
