@@ -33,15 +33,34 @@ zip_archive::~zip_archive()
         zip_fclose(inner_file);
     }
     zip_close(zip_file);
+    if(file_buffer != nullptr)
+    {
+        delete[] file_buffer;
+    }
 }
 
 bool zip_archive::next_line(char line[247])
 {
-    if (zip_fread(inner_file, line, 247) == -1)
+    if(file_buffer == nullptr)
     {
-        zip_fclose(inner_file);
-        inner_file = nullptr;
+        zip_stat_t stat;
+        zip_stat_index(zip_file, 0, 0, &stat);
+        file_buffer_size = stat.size;
+        file_buffer = new char[stat.size];
+        if(file_buffer == nullptr)
+        {
+            return false;
+        }
+        if(zip_fread(inner_file, file_buffer, stat.size) == -1)
+        {
+            return false;
+        }
+    }
+    if(file_buffer_index + 247 > file_buffer_size)
+    {
         return false;
     }
+    std::copy(file_buffer + file_buffer_index, file_buffer + file_buffer_index + 247, line);
+    file_buffer_index += 247;
     return true;
 }

@@ -74,7 +74,7 @@ int main()
     std::tm date = {};
     date.tm_mday = 1;
     date.tm_mon = 0;
-    date.tm_year = 120;
+    date.tm_year = 123;
     std::counting_semaphore<> semaphore(12);
     std::jthread threads[24];
     std::chrono::nanoseconds total_time = std::chrono::nanoseconds::zero();
