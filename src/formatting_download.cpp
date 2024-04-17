@@ -47,10 +47,10 @@ CotBovespa parse_line(const std::string_view &line)
     cotacao.dt_pregao = parse_date(line.substr(2, 8));
     cotacao.cd_codbdi = parse_int(line.substr(10, 2));
     std::string_view codneg = line.substr(12, 12);
-    std::copy(codneg.begin(), codneg.end(), cotacao.cd_codneg);
+    std::memcpy(cotacao.cd_codneg, codneg.data(), 12);
     cotacao.cd_tpmerc = parse_int(line.substr(24, 3));
     std::string_view nm_speci = line.substr(39, 10);
-    std::copy(nm_speci.begin(), nm_speci.end(), cotacao.nm_speci);
+    std::memcpy(cotacao.nm_speci, nm_speci.data(), 10);
     cotacao.prz_termo = parse_int(line.substr(49, 3));
     cotacao.prec_aber = parse_double(line.substr(56, 13));
     cotacao.prec_max = parse_double(line.substr(69, 13));
@@ -61,7 +61,7 @@ CotBovespa parse_line(const std::string_view &line)
     cotacao.dt_datven = parse_date(line.substr(202, 8));
     cotacao.fat_cot = parse_int(line.substr(210, 7));
     std::string_view codisin = line.substr(230, 12);
-    std::copy(codisin.begin(), codisin.end(), cotacao.cd_codisin);
+    std::memcpy(cotacao.cd_codisin, codisin.data(), 12);
     cotacao.nr_dismes = parse_int(line.substr(242, 3));
     return cotacao;
 }
@@ -80,7 +80,7 @@ zip_archive download_zip(const std::string_view &url)
     return zip_archive(content);
 }
 
-void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue)
+void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue, std::atomic<bool>& done)
 {
     char line[247];
     while(zip.next_line(line))
@@ -89,6 +89,7 @@ void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &que
         switch(type)
         {
             case LineType::END:
+                done = true;
                 return;
             case LineType::START:
                 continue;
@@ -98,17 +99,5 @@ void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &que
                 break;
         }
     }
-}
-
-LineType next_quote(zip_archive &zip, CotBovespa &cotacao)
-{
-    char line[247];
-    while(zip.next_line(line))
-    {
-        LineType type = check_line(line);
-        if(type != LineType::QUOTE) return type;
-        cotacao = parse_line(line);
-        return type;
-    }
-    return LineType::END;
+    done = true;
 }

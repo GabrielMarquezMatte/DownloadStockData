@@ -32,5 +32,4 @@ enum class LineType
 };
 
 zip_archive download_zip(const std::string_view &url);
-void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue);
-LineType next_quote(zip_archive &zip, CotBovespa &cotacao);
+void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue, std::atomic<bool>& done);
