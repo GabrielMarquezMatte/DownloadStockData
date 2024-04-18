@@ -5,10 +5,12 @@
 #include <thread>
 #include <chrono>
 #include <format>
+#include <fstream>
 #include <spdlog/spdlog.h>
 #include <http_client.hpp>
 #include <zip_archive.hpp>
 #include <formatting_download.hpp>
+#include <parse_data.hpp>
 
 using date_t = std::chrono::system_clock::time_point;
 
@@ -21,6 +23,12 @@ enum class Type
     YEAR,
 };
 
+enum class OutputType
+{
+    None,
+    CSV,
+};
+
 struct DownloadParameters
 {
     std::counting_semaphore<>* semaphore;
@@ -29,6 +37,16 @@ struct DownloadParameters
     const Type type;
     std::chrono::nanoseconds& total_time;
     std::atomic<int>& count;
+    OutputType output_type = OutputType::CSV;
+};
+
+struct LineProcessorParameters
+{
+    moodycamel::ReaderWriterQueue<CotBovespa>* queue;
+    std::atomic<bool>* done;
+    int* inner_count;
+    OutputType output_type;
+    std::ofstream* output_file;
 };
 
 std::size_t date_to_log(const date_t &date, Type type, char buffer[10])
@@ -81,16 +99,32 @@ std::string get_url(const date_t &date,const Type type)
     return base_url + type_to_char(type) + date_str + ".ZIP";
 }
 
-void reader_task(moodycamel::ReaderWriterQueue<CotBovespa> &queue, std::atomic<bool> &done, int& inner_count)
+void process_lines(const LineProcessorParameters& parameters)
 {
-    CotBovespa cotacao;
-    while (!done)
+    OutputType output_type = parameters.output_type;
+    std::ofstream* output_file = parameters.output_file;
+    moodycamel::ReaderWriterQueue<CotBovespa>* queue = parameters.queue;
+    std::atomic<bool>* done = parameters.done;
+    int inner_count = 0;
+    if(output_type == OutputType::CSV)
     {
-        while (queue.try_dequeue(cotacao))
+        (*output_file) << "Date;BDI;Negotiation Code;ISIN Code;Specification;Market Type;Term;Opening Price;Max Price;Min Price;Average Price;Closing Price;Exercise Price;Expiration Date;Quote Factor;Days in Month\n";
+    }
+    CotBovespa cotacao;
+    while (!*done)
+    {
+        while (queue->try_dequeue(cotacao))
         {
+            if(output_type == OutputType::CSV)
+            {
+                char buffer[212];
+                std::size_t size = parse_csv_line(cotacao, buffer);
+                output_file->write(buffer, size);
+            }
             inner_count++;
         }
     }
+    (*parameters.inner_count) = inner_count;
 }
 
 void download_quotes(DownloadParameters parameters)
@@ -99,6 +133,25 @@ void download_quotes(DownloadParameters parameters)
     char buffer[10];
     auto result = date_to_log(parameters.date, parameters.type, buffer);
     std::string_view date_str(buffer, result);
+    LineProcessorParameters line_parameters;
+    if(parameters.output_type == OutputType::CSV)
+    {
+        char date_str2[8];
+        result = date_to_string(parameters.date, parameters.type, date_str2);
+        std::string file_name = "./output_" + std::string(date_str2, result) + ".csv";
+        std::ofstream* output_file = new std::ofstream(file_name, std::ios::binary | std::ios::trunc);
+        if(output_file == nullptr || !output_file->is_open())
+        {
+            if(output_file != nullptr)
+            {
+                delete output_file;
+            }
+            parameters.semaphore->release();
+            spdlog::error("Failed to open file for date {}", date_str);
+            return;
+        }
+        line_parameters.output_file = output_file;
+    }
     auto start = std::chrono::high_resolution_clock::now();
     std::string url = get_url(parameters.date, parameters.type);
     zip_archive zip = download_zip(url);
@@ -106,12 +159,17 @@ void download_quotes(DownloadParameters parameters)
     spdlog::info("Downloaded {} for date {} in {} ms", url, date_str, std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
     moodycamel::ReaderWriterQueue<CotBovespa> queue(1000);
     std::atomic<bool> done = false;
-    start = std::chrono::high_resolution_clock::now();
     int inner_count = 0;
+    line_parameters.queue = &queue;
+    line_parameters.done = &done;
+    line_parameters.output_type = parameters.output_type;
+    line_parameters.inner_count = &inner_count;
+    start = std::chrono::high_resolution_clock::now();
     std::jthread writer(read_lines, std::ref(zip), std::ref(queue), std::ref(done));
-    std::jthread reader(reader_task, std::ref(queue), std::ref(done), std::ref(inner_count));
+    std::jthread reader(process_lines, line_parameters);
     writer.join();
     reader.join();
+    line_parameters.output_file->close();
     end = std::chrono::high_resolution_clock::now();
     std::chrono::nanoseconds execution_time = end - start;
     {
@@ -121,6 +179,10 @@ void download_quotes(DownloadParameters parameters)
     }
     parameters.semaphore->release();
     spdlog::info("Downloaded {} quotes in {} ms for date {}", inner_count, std::chrono::duration_cast<std::chrono::milliseconds>(execution_time).count(), date_str);
+    if(line_parameters.output_file != nullptr)
+    {
+        delete line_parameters.output_file;
+    }
 }
 
 int main()

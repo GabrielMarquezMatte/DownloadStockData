@@ -2,7 +2,6 @@ find_package(CURL CONFIG REQUIRED)
 find_package(libpqxx CONFIG REQUIRED)
 find_path(READERWRITERQUEUE_INCLUDE_DIRS "readerwriterqueue/atomicops.h")
 
-
 file(GLOB_RECURSE SOURCES_SRC "*.cpp")
 
 add_library(download_src STATIC ${SOURCES_SRC})
