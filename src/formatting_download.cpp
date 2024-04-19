@@ -80,17 +80,18 @@ zip_archive download_zip(const std::string_view &url)
     return zip_archive(content);
 }
 
-void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue, std::atomic<bool>& done)
+int read_quote_file(zip_archive& zip, moodycamel::ConcurrentQueue<CotBovespa>& queue)
 {
     char line[247];
+    int count = 0;
     while(zip.next_line(line))
     {
+        count++;
         LineType type = check_line(line);
         switch(type)
         {
             case LineType::END:
-                done = true;
-                return;
+                return count;
             case LineType::START:
                 continue;
             case LineType::QUOTE:
@@ -99,5 +100,5 @@ void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &que
                 break;
         }
     }
-    done = true;
+    return count;
 }

@@ -11,6 +11,6 @@
         "nlohmann-json",
         "spdlog",
         "fmt",
-        "readerwriterqueue"
+        "concurrentqueue"
     ]
 }

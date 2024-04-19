@@ -1,7 +1,7 @@
 #pragma once
 #include "../include/http_client.hpp"
 #include "../include/zip_archive.hpp"
-#include <readerwriterqueue/readerwriterqueue.h>
+#include <concurrentqueue/concurrentqueue.h>
 #include <ctime>
 
 struct CotBovespa
@@ -32,4 +32,4 @@ enum class LineType
 };
 
 zip_archive download_zip(const std::string_view &url);
-void read_lines(zip_archive &zip, moodycamel::ReaderWriterQueue<CotBovespa> &queue, std::atomic<bool>& done);
+int read_quote_file(zip_archive& zip, moodycamel::ConcurrentQueue<CotBovespa>& queue);
