@@ -23,6 +23,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-concurrentqueue CONFIG REQUIRED)
+find_package(Arrow CONFIG REQUIRED)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/lib)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src)
@@ -35,6 +36,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE download_lib download_src)
 target_link_libraries(${PROJECT_NAME} PRIVATE cxxopts::cxxopts)
 target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::concurrentqueue::concurrentqueue)
+target_link_libraries(${PROJECT_NAME} PRIVATE Arrow::arrow_shared Arrow::arrow_shared parquet_shared)
 
 FILE(GLOB API_SOURCE_FILES api.cpp ${PROJECT_SOURCE_DIR}/controllers/*.cpp)
 

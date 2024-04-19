@@ -11,6 +11,12 @@
         "nlohmann-json",
         "spdlog",
         "fmt",
-        "concurrentqueue"
+        "concurrentqueue",
+        {
+            "name": "arrow",
+            "features": [
+                "parquet"
+            ]
+        }
     ]
 }

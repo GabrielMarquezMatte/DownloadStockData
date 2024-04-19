@@ -7,6 +7,8 @@
 #include <format>
 #include <fstream>
 #include <concurrentqueue/concurrentqueue.h>
+#include <arrow/io/file.h>
+#include <parquet/stream_writer.h>
 #include <spdlog/spdlog.h>
 #include <http_client.hpp>
 #include <zip_archive.hpp>
@@ -28,6 +30,7 @@ enum class OutputType
 {
     None,
     CSV,
+    PARQUET,
 };
 
 struct DownloadParameters
@@ -93,6 +96,7 @@ std::string get_url(const date_t &date,const Type type)
 
 void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa>& queue, std::atomic<bool>& done)
 {
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::ofstream output_file("output.csv", std::ios::binary | std::ios::trunc | std::ios::out);
     output_file << "Date;BDI;Negotiation Code;ISIN Code;Specification;Market Type;Term;Opening Price;Max Price;Min Price;Average Price;Closing Price;Exercise Price;Expiration Date;Quote Factor;Days in Month\n";
     CotBovespa cotacao;
@@ -103,6 +107,52 @@ void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa>& queue, std::atom
             char buffer[212];
             std::size_t size = parse_csv_line(cotacao, buffer);
             output_file.write(buffer, size);
+        }
+    }
+    output_file.close();
+    std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
+    spdlog::info("Wrote output.csv in {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count());
+}
+
+std::shared_ptr<parquet::schema::GroupNode> GetSchema()
+{
+    parquet::schema::NodeVector fields;
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Date", parquet::Repetition::REQUIRED, parquet::Type::INT64, parquet::ConvertedType::DATE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("BDI", parquet::Repetition::REQUIRED, parquet::Type::INT32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Negotiation Code", parquet::Repetition::REQUIRED, parquet::Type::BYTE_ARRAY));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("ISIN Code", parquet::Repetition::REQUIRED, parquet::Type::BYTE_ARRAY));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Specification", parquet::Repetition::REQUIRED, parquet::Type::BYTE_ARRAY));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Market Type", parquet::Repetition::REQUIRED, parquet::Type::INT32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Term", parquet::Repetition::REQUIRED, parquet::Type::INT32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Opening Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Max Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Min Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Average Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Closing Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Exercise Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Expiration Date", parquet::Repetition::REQUIRED, parquet::Type::INT64, parquet::ConvertedType::DATE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Quote Factor", parquet::Repetition::REQUIRED, parquet::Type::INT32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Days in Month", parquet::Repetition::REQUIRED, parquet::Type::INT32));
+    return std::static_pointer_cast<parquet::schema::GroupNode>(parquet::schema::GroupNode::Make("cotacoes", parquet::Repetition::REQUIRED, fields));
+
+}
+
+void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa>& queue, std::atomic<bool>& done)
+{
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::shared_ptr<arrow::io::FileOutputStream> output_file;
+    PARQUET_ASSIGN_OR_THROW(output_file, arrow::io::FileOutputStream::Open("output.parquet"));
+    std::shared_ptr<parquet::schema::GroupNode> schema = GetSchema();
+    parquet::WriterProperties::Builder builder;
+    parquet::StreamWriter writer{parquet::ParquetFileWriter::Open(output_file, schema, builder.build())};
+    CotBovespa cotacao;
+    while(!done)
+    {
+        while(queue.try_dequeue(cotacao))
+        {
+            int64_t date = std::mktime(&cotacao.dt_pregao);
+            int64_t expiration_date = std::mktime(&cotacao.dt_datven);
+            writer << date << cotacao.cd_codbdi << cotacao.cd_codneg << cotacao.cd_codisin << cotacao.nm_speci << cotacao.cd_tpmerc << cotacao.prz_termo << cotacao.prec_aber << cotacao.prec_max << cotacao.prec_min << cotacao.prec_med << cotacao.prec_fec << cotacao.prec_exer << expiration_date << cotacao.fat_cot << cotacao.nr_dismes;
         }
     }
 }
@@ -146,7 +196,7 @@ void download_quotes(DownloadParameters parameters)
 
 int main()
 {
-    const int Months = 48;
+    const int Months = 3;
     std::counting_semaphore<> semaphore(16);
     std::thread threads[Months];
     std::chrono::nanoseconds total_time = std::chrono::nanoseconds::zero();
@@ -167,7 +217,7 @@ int main()
         date += std::chrono::months(1);
     }
     std::atomic<bool> done = false;
-    std::jthread writer(process_lines_csv, std::ref(queue), std::ref(done));
+    std::jthread writer(process_lines_parquet, std::ref(queue), std::ref(done));
     for(auto& thread : threads)
     {
         thread.join();
