@@ -15,12 +15,18 @@ std::tm parse_date(const std::string_view& date)
 
 int parse_int(const std::string_view& str)
 {
-    int value = 0;
-    for (size_t i = 0; i < str.size(); i++)
-    {
-        if(str[i] >= '0' && str[i] <= '9') value = value * 10 + (str[i] - '0');
+    char buffer[7] = {'0'};
+    std::size_t len = str.length();
+    for (int i = 0; i < len; ++i) {
+        buffer[6 - i] = str[len - 1 - i];
     }
-    return value;
+    return (buffer[0] - '0') * 1000000 +
+           (buffer[1] - '0') * 100000 +
+           (buffer[2] - '0') * 10000 +
+           (buffer[3] - '0') * 1000 +
+           (buffer[4] - '0') * 100 +
+           (buffer[5] - '0') * 10 +
+           (buffer[6] - '0');
 }
 
 double parse_double(const std::string_view& str)

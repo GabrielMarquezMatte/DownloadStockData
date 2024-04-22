@@ -19,5 +19,6 @@
             ]
         },
         "boost-pool"
-    ]
+    ],
+    "builtin-baseline": "da4b78d35084ec4e9808aa02017028da03b8d2ab"
 }
