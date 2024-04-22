@@ -20,7 +20,7 @@ static bool operator<(const std::tm &lhs, const std::tm &rhs) noexcept
     return false;
 }
 
-void insert_into_table(connection_pool &pool, const std::vector<CotBovespa> &data)
+void insert_into_table(ConnectionPool &pool, const std::vector<CotBovespa> &data)
 {
     auto connection = pool.get_connection();
     auto min_date = std::min_element(data.begin(), data.end(), [](const CotBovespa &lhs, const CotBovespa &rhs)
@@ -54,5 +54,4 @@ void insert_into_table(connection_pool &pool, const std::vector<CotBovespa> &dat
         std::cerr << e.what() << '\n';
         transaction.abort();
     }
-    pool.return_connection(connection);
 }

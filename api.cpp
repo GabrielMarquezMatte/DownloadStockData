@@ -5,7 +5,7 @@
 #include <cxxopts.hpp>
 #include "include/connection_pool.hpp"
 #include "controllers/stock_data_controller.hpp"
-std::shared_ptr<connection_pool> pool;
+std::shared_ptr<ConnectionPool> pool;
 
 constexpr const char *BAD_REQUEST_RESPONSE = "{'error': 'Bad request'}";
 constexpr const char *APPLICATION_JSON = "application/json";
@@ -144,7 +144,7 @@ int main(int argc, char **argv)
         std::cout << options.help() << std::endl;
         return 0;
     }
-    pool = std::make_shared<connection_pool>(connection_string, pool_size);
+    pool = std::make_shared<ConnectionPool>(connection_string, pool_size);
     std::shared_ptr<restbed::Resource> stock_data_resource = std::make_shared<restbed::Resource>();
     stock_data_resource->set_path("/stock_data/{symbol: .*}");
     stock_data_resource->set_method_handler("GET", get_stock_data);

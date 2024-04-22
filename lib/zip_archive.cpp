@@ -20,9 +20,7 @@ inline void close_zip_archive(zip_t* zip_file, zip_file_t* inner_file, char* fil
 
 zip_archive::zip_archive(const std::string_view& content_buffer)
 {
-    this->buffer = std::make_unique<char[]>(content_buffer.size());
-    std::memcpy(buffer.get(), content_buffer.data(), content_buffer.size());
-    zip_source = zip_source_buffer_create(buffer.get(), content_buffer.size(), 0, nullptr);
+    zip_source = zip_source_buffer_create(content_buffer.data(), content_buffer.size(), 0, nullptr);
     if (zip_source == nullptr)
     {
         throw std::runtime_error("Failed to create zip source buffer");
