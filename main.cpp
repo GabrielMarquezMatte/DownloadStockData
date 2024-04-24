@@ -116,7 +116,8 @@ void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::atom
     std::ofstream output_file("output.csv", std::ios::binary | std::ios::trunc | std::ios::out);
     output_file << "Date;BDI;Negotiation Code;ISIN Code;Specification;Market Type;Term;Opening Price;Max Price;Min Price;Average Price;Closing Price;Exercise Price;Expiration Date;Quote Factor;Days in Month\n";
     CotBovespa cotacao;
-    while (!done)
+    int count = 0;
+    while (!done || count == 0)
     {
         while (queue.try_dequeue(cotacao))
         {
@@ -124,6 +125,7 @@ void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::atom
             std::size_t size = parse_csv_line(cotacao, buffer);
             output_file.write(buffer, size);
         }
+        count++;
     }
     output_file.close();
     std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
@@ -163,7 +165,8 @@ void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::
     builder.version(parquet::ParquetVersion::PARQUET_2_LATEST);
     parquet::StreamWriter writer{parquet::ParquetFileWriter::Open(output_file, schema, builder.build())};
     CotBovespa cotacao;
-    while (!done)
+    int count = 0;
+    while (!done || count == 0)
     {
         while (queue.try_dequeue(cotacao))
         {
@@ -187,18 +190,21 @@ void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::
             writer << cotacao.nr_dismes;
             writer.EndRow();
         }
+        count++;
     }
 }
 
 void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::atomic<bool> &done)
 {
     CotBovespa cotacao;
-    while (!done)
+    int count = 0;
+    while (!done || count == 0)
     {
         while (queue.try_dequeue(cotacao))
         {
             // Do nothing
         }
+        count++;
     }
 }
 
@@ -212,7 +218,8 @@ void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, std:
     conn->prepare("insert_query", insert_query);
     pqxx::work txn(*conn);
     auto start = std::chrono::high_resolution_clock::now();
-    while (!done)
+    int count = 0;
+    while (!done || count == 0)
     {
         while (queue.try_dequeue(cotacao))
         {
@@ -227,6 +234,7 @@ void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, std:
             std::string_view expiration_date_str(buffer2, result);
             txn.exec_prepared0("insert_query", date_str, cotacao.prz_termo, codneg, cotacao.cd_tpmerc, cotacao.cd_codbdi, codisin, speci, cotacao.prec_aber, cotacao.prec_max, cotacao.prec_min, cotacao.prec_med, cotacao.prec_fec, cotacao.prec_exer, expiration_date_str, cotacao.fat_cot, cotacao.nr_dismes);
         }
+        count++;
     }
     txn.commit();
     auto end = std::chrono::high_resolution_clock::now();
