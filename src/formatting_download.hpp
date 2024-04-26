@@ -8,9 +8,9 @@ struct CotBovespa
 {
     std::tm dt_pregao;
     int cd_codbdi;
-    char cd_codneg[12];
-    char cd_codisin[12];
-    char nm_speci[10];
+    char cd_codneg[16];
+    char cd_codisin[16];
+    char nm_speci[16];
     int cd_tpmerc;
     int prz_termo = -1;
     double prec_aber;

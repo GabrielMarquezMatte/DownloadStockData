@@ -110,7 +110,7 @@ int days_to_epoch(std::tm &date)
     return static_cast<int>((date_time - epoch_time) / (60 * 60 * 24));
 }
 
-void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::atomic<bool> &done)
+void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
 {
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::ofstream output_file("output.csv", std::ios::binary | std::ios::trunc | std::ios::out);
@@ -154,7 +154,7 @@ std::shared_ptr<parquet::schema::GroupNode> GetSchema()
     return std::static_pointer_cast<parquet::schema::GroupNode>(parquet::schema::GroupNode::Make("cotacoes", parquet::Repetition::REQUIRED, fields));
 }
 
-void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::atomic<bool> &done)
+void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
 {
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::shared_ptr<arrow::io::FileOutputStream> output_file;
@@ -194,7 +194,7 @@ void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::
     }
 }
 
-void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::atomic<bool> &done)
+void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
 {
     CotBovespa cotacao;
     bool ran = false;
@@ -208,7 +208,7 @@ void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::ato
     }
 }
 
-void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, std::atomic<bool> &done)
+void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
 {
     const constexpr char *connection_string = "dbname=testdb user=postgres password=postgres hostaddr=127.0.0.1 port=5432";
     const constexpr char *insert_query = "INSERT INTO tcot_bovespa (dt_pregao, prz_termo, cd_codneg, cd_tpmerc, cd_codbdi, cd_codisin, nm_speci, prec_aber, prec_max, prec_min, prec_med, prec_fec, prec_exer, dt_datven, fat_cot, nr_dismes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) ON CONFLICT (dt_pregao, prz_termo, cd_codneg) DO NOTHING;";
@@ -275,7 +275,7 @@ void download_quotes(DownloadParameters parameters)
 
 int main()
 {
-    const int Months = 10;
+    const int Months = 48;
     std::counting_semaphore<> semaphore(16);
     std::thread threads[Months];
     std::chrono::nanoseconds total_time = std::chrono::nanoseconds::zero();

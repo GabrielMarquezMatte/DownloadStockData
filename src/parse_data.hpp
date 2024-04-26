@@ -90,10 +90,6 @@ std::size_t parse_csv_line(const CotBovespa& quote, char output[212])
     output[size++] = ';';
     for(int i = 0; i < 10; i++)
     {
-        if(quote.nm_speci[i] == ' ')
-        {
-            break;
-        }
         output[size++] = quote.nm_speci[i];
     }
     output[size++] = ';';

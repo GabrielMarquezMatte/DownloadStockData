@@ -1,5 +1,6 @@
 #include "formatting_download.hpp"
 #include <string>
+#include <xmmintrin.h>
 
 std::tm parse_date(const std::string_view &date)
 {
@@ -43,16 +44,22 @@ double parse_double(const std::string_view &str)
     return result * 0.01;
 }
 
+void copyBytesAligned(char *dest, const char *src)
+{
+    __m128 data = _mm_loadu_ps(reinterpret_cast<const float *>(src));
+    _mm_store_ps(reinterpret_cast<float *>(dest), data);
+}
+
 CotBovespa parse_line(const std::string_view &line)
 {
     CotBovespa cotacao;
     cotacao.dt_pregao = parse_date(line.substr(2, 8));
     cotacao.cd_codbdi = parse_int<2>(line.substr(10, 2));
     std::string_view codneg = line.substr(12, 12);
-    std::memcpy(cotacao.cd_codneg, codneg.data(), 12);
+    copyBytesAligned(cotacao.cd_codneg, codneg.data());
     cotacao.cd_tpmerc = parse_int<3>(line.substr(24, 3));
     std::string_view nm_speci = line.substr(39, 10);
-    std::memcpy(cotacao.nm_speci, nm_speci.data(), 10);
+    copyBytesAligned(cotacao.nm_speci, nm_speci.data());
     cotacao.prz_termo = parse_int<3>(line.substr(49, 3));
     cotacao.prec_aber = parse_double(line.substr(56, 13));
     cotacao.prec_max = parse_double(line.substr(69, 13));
@@ -63,7 +70,7 @@ CotBovespa parse_line(const std::string_view &line)
     cotacao.dt_datven = parse_date(line.substr(202, 8));
     cotacao.fat_cot = parse_int<7>(line.substr(210, 7));
     std::string_view codisin = line.substr(230, 12);
-    std::memcpy(cotacao.cd_codisin, codisin.data(), 12);
+    copyBytesAligned(cotacao.cd_codisin, codisin.data());
     cotacao.nr_dismes = parse_int<3>(line.substr(242, 3));
     return cotacao;
 }
