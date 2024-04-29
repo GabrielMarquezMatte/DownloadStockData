@@ -37,17 +37,11 @@ LineType check_line(const std::string_view &line)
     return LineType::QUOTE;
 }
 
-zip_archive download_zip(const std::string_view &url)
-{
-    std::string content = http_client::get(url.data());
-    return zip_archive(content);
-}
-
-int read_quote_file(zip_archive &zip, moodycamel::ConcurrentQueue<CotBovespa> &queue)
+int read_quote_file(zip_archive &zip, moodycamel::ConcurrentQueue<CotBovespa> &queue, std::stop_token stop_token)
 {
     char line[247];
     int count = 0;
-    while (zip.next_line(line))
+    while (zip.next_line(line) && !stop_token.stop_requested())
     {
         count++;
         LineType type = check_line(line);

@@ -63,6 +63,5 @@ enum class LineType
     END,
 };
 
-zip_archive download_zip(const std::string_view &url);
-int read_quote_file(zip_archive& zip, moodycamel::ConcurrentQueue<CotBovespa>& queue);
+int read_quote_file(zip_archive& zip, moodycamel::ConcurrentQueue<CotBovespa>& queue, std::stop_token stop_token);
 #endif

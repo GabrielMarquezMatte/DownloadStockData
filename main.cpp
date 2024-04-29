@@ -17,6 +17,7 @@
 #include <string_operations.hpp>
 #include "connection_pool.hpp"
 #include <pqxx/pqxx>
+#include <stop_token>
 
 using date_t = std::chrono::system_clock::time_point;
 
@@ -111,16 +112,16 @@ int days_to_epoch(std::chrono::system_clock::time_point &date)
     return std::chrono::duration_cast<std::chrono::days>(date.time_since_epoch()).count();
 }
 
-void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done, std::stop_token token)
 {
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::ofstream output_file("output.csv", std::ios::binary | std::ios::trunc | std::ios::out);
     output_file << "Date;BDI;Negotiation Code;ISIN Code;Specification;Market Type;Term;Opening Price;Max Price;Min Price;Average Price;Closing Price;Exercise Price;Expiration Date;Quote Factor;Days in Month\n";
     CotBovespa cotacao;
     bool ran = false;
-    while (!done || !ran)
+    while ((!done || !ran) && !token.stop_requested())
     {
-        while (queue.try_dequeue(cotacao))
+        while (queue.try_dequeue(cotacao) && !token.stop_requested())
         {
             char buffer[212];
             std::size_t size = parse_csv_line(cotacao, buffer);
@@ -155,7 +156,7 @@ std::shared_ptr<parquet::schema::GroupNode> GetSchema()
     return std::static_pointer_cast<parquet::schema::GroupNode>(parquet::schema::GroupNode::Make("cotacoes", parquet::Repetition::REQUIRED, fields));
 }
 
-void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done, std::stop_token token)
 {
     std::shared_ptr<arrow::io::FileOutputStream> output_file;
     PARQUET_ASSIGN_OR_THROW(output_file, arrow::io::FileOutputStream::Open("output.parquet"));
@@ -167,9 +168,9 @@ void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, const
     CotBovespa cotacao;
     bool ran = false;
     auto start = std::chrono::high_resolution_clock::now();
-    while (!done || !ran)
+    while ((!done || !ran) && !token.stop_requested())
     {
-        while (queue.try_dequeue(cotacao))
+        while (queue.try_dequeue(cotacao) && !token.stop_requested())
         {
             int date = days_to_epoch(cotacao.dt_pregao);
             int expiration_date = days_to_epoch(cotacao.dt_datven);
@@ -197,13 +198,13 @@ void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, const
     spdlog::info("Wrote output.parquet in {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 }
 
-void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done, std::stop_token token)
 {
     CotBovespa cotacao;
     bool ran = false;
-    while (!done || !ran)
+    while ((!done || !ran) && !token.stop_requested())
     {
-        while (queue.try_dequeue(cotacao))
+        while (queue.try_dequeue(cotacao) && !token.stop_requested())
         {
             // Do nothing
         }
@@ -211,7 +212,7 @@ void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, const st
     }
 }
 
-void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done, std::stop_token token)
 {
     const constexpr char *connection_string = "dbname=testdb user=postgres password=postgres hostaddr=127.0.0.1 port=5432";
     const constexpr char *create_temp_table = "CREATE TEMP TABLE temp_cotacoes AS TABLE tcot_bovespa WITH NO DATA";
@@ -223,9 +224,9 @@ void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, cons
     auto start = std::chrono::high_resolution_clock::now();
     bool ran = false;
     pqxx::stream_to stream = pqxx::stream_to::table(txn, {"temp_cotacoes"}, {"dt_pregao", "prz_termo", "cd_codneg", "cd_tpmerc", "cd_codbdi", "cd_codisin", "nm_speci", "prec_aber", "prec_max", "prec_min", "prec_med", "prec_fec", "prec_exer", "dt_datven", "fat_cot", "nr_dismes"});
-    while (!done || !ran)
+    while ((!done || !ran) && !token.stop_requested())
     {
-        while (queue.try_dequeue(cotacao))
+        while (queue.try_dequeue(cotacao) && !token.stop_requested())
         {
             std::string_view codneg{cotacao.cd_codneg, 12};
             std::string_view codisin{cotacao.cd_codisin, 12};
@@ -250,7 +251,7 @@ void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, cons
     spdlog::info("Inserted quotes in {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 }
 
-void download_quotes(DownloadParameters parameters)
+void download_quotes(DownloadParameters parameters, std::stop_token token)
 {
     parameters.semaphore.acquire();
     char buffer[10];
@@ -258,7 +259,7 @@ void download_quotes(DownloadParameters parameters)
     std::string_view date_str(buffer, result);
     auto start = std::chrono::high_resolution_clock::now();
     std::string url = get_url(parameters.date, parameters.type);
-    std::string content = http_client::get(url.data());
+    std::string content = http_client::get(url.data(), token);
     if (content.empty())
     {
         spdlog::error("Failed to download {} for date {}", url, date_str);
@@ -270,7 +271,7 @@ void download_quotes(DownloadParameters parameters)
     spdlog::info("Downloaded {} for date {} in {} ms", url, date_str, std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
     std::atomic<bool> done = false;
     start = std::chrono::high_resolution_clock::now();
-    int count = read_quote_file(zip, parameters.queue);
+    int count = read_quote_file(zip, parameters.queue, token);
     parameters.count += count;
     end = std::chrono::high_resolution_clock::now();
     std::chrono::nanoseconds execution_time = end - start;
@@ -282,9 +283,25 @@ void download_quotes(DownloadParameters parameters)
     spdlog::info("Downloaded {} quotes in {} ms for date {}", count, std::chrono::duration_cast<std::chrono::milliseconds>(execution_time).count(), date_str);
 }
 
+void stop_requested(std::stop_source &source)
+{
+    std::thread([&source]() {
+        std::string line;
+        while (std::getline(std::cin, line))
+        {
+            if (line == "q" || line == "quit" || line == "exit")
+            {
+                source.request_stop();
+                spdlog::warn("Stop requested");
+                return;
+            }
+        }
+    }).detach();
+}
+
 int main(int argc, char **argv)
 {
-    if(argc < 3)
+    if (argc < 3)
     {
         spdlog::error("Usage: {} <start_date> <end_date>", argv[0]);
         return 1;
@@ -297,19 +314,19 @@ int main(int argc, char **argv)
     std::istringstream end_date_stream(argv[2]);
     date_t start_date;
     start_date_stream >> std::chrono::parse("%Y-%m-%d", start_date);
-    if(!start_date_stream)
+    if (!start_date_stream)
     {
         spdlog::error("Invalid start date");
         return 1;
     }
     date_t end_date;
     end_date_stream >> std::chrono::parse("%Y-%m-%d", end_date);
-    if(!end_date_stream)
+    if (!end_date_stream)
     {
         spdlog::error("Invalid end date");
         return 1;
     }
-    if(start_date > end_date)
+    if (start_date > end_date)
     {
         spdlog::error("Start date is greater than end date");
         return 1;
@@ -318,14 +335,17 @@ int main(int argc, char **argv)
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::vector<std::thread> threads;
     threads.reserve(std::chrono::duration_cast<std::chrono::months>(end_date - start_date).count() + 1);
-    while(start_date <= now && start_date <= end_date)
+    std::stop_source source;
+    std::stop_token token = source.get_token();
+    stop_requested(source);
+    while (start_date <= now && start_date <= end_date)
     {
         DownloadParameters parameters{semaphore, sum_mutex, start_date, Type::MONTH, total_time, count, queue};
-        threads.emplace_back(download_quotes, parameters);
+        threads.emplace_back(download_quotes, parameters, token);
         start_date += std::chrono::months(1);
     }
     std::atomic<bool> done = false;
-    std::jthread writer(process_lines_parquet, std::ref(queue), std::ref(done));
+    std::jthread writer(process_lines_csv, std::ref(queue), std::ref(done), token);
     for (auto &thread : threads)
     {
         thread.join();
