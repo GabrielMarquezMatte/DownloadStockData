@@ -1,275 +1,337 @@
+#include <string>
+#include <ctime>
+#include <semaphore>
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <format>
+#include <fstream>
+#include <concurrentqueue/concurrentqueue.h>
+#include <arrow/io/file.h>
+#include <parquet/stream_writer.h>
+#include <spdlog/spdlog.h>
 #include <http_client.hpp>
 #include <zip_archive.hpp>
-#include <connection_pool.hpp>
 #include <formatting_download.hpp>
-#include <insert_db.hpp>
-#include <thread_pool.hpp>
-#include <iostream>
-#include <string>
-#include <vector>
-#include <ctime>
-#include <iomanip>
-#include <chrono>
+#include <parse_data.hpp>
+#include <string_operations.hpp>
+#include "connection_pool.hpp"
 #include <pqxx/pqxx>
-#include <cxxopts.hpp>
+
+using date_t = std::chrono::system_clock::time_point;
 
 static const std::string base_url = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_";
-static std::mutex mtx;
 
-bool operator<(const std::tm &lhs, const std::tm &rhs) noexcept
+enum class Type
 {
-    if (lhs.tm_year < rhs.tm_year)
-        return true;
-    if (lhs.tm_year > rhs.tm_year)
-        return false;
-    if (lhs.tm_mon < rhs.tm_mon)
-        return true;
-    if (lhs.tm_mon > rhs.tm_mon)
-        return false;
-    if (lhs.tm_mday < rhs.tm_mday)
-        return true;
-    if (lhs.tm_mday > rhs.tm_mday)
-        return false;
-    return false;
-}
+    DAY,
+    MONTH,
+    YEAR,
+};
 
-bool operator==(const std::tm &lhs, const std::tm &rhs) noexcept
+enum class OutputType
 {
-    return lhs.tm_year == rhs.tm_year && lhs.tm_mon == rhs.tm_mon && lhs.tm_mday == rhs.tm_mday;
-}
+    None,
+    CSV,
+    PARQUET,
+    POSTGRES,
+};
 
-bool operator<=(const std::tm &lhs, const std::tm &rhs) noexcept
+struct DownloadParameters
 {
-    return lhs < rhs || lhs == rhs;
-}
+    std::counting_semaphore<> &semaphore;
+    std::mutex &sum_mutex;
+    const date_t date;
+    const Type type;
+    std::chrono::nanoseconds &total_time;
+    std::atomic<int> &count;
+    moodycamel::ConcurrentQueue<CotBovespa> &queue;
+};
 
-bool operator>(const std::tm &lhs, const std::tm &rhs) noexcept
+std::size_t date_to_log(const date_t &date, Type type, char buffer[10])
 {
-    return !(lhs <= rhs);
-}
-
-#ifndef _WIN32
-static std::ostream &operator<<(std::ostream &os, const std::chrono::time_point<std::chrono::system_clock> &tp)
-{
-    std::time_t t = std::chrono::system_clock::to_time_t(tp);
-    os << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S.%f");
-    return os;
-}
-#endif
-
-std::string date_to_string(const std::tm &date, const std::string &format)
-{
-    char buffer[80];
-    std::strftime(buffer, sizeof(buffer), format.c_str(), &date);
-    return std::string(buffer);
-}
-
-std::string get_url(const std::tm &date, const bool annual) noexcept
-{
-    std::string url = base_url;
-    url += annual ? "A" : "D";
-    url += annual ? date_to_string(date, "%Y") : date_to_string(date, "%d%m%Y");
-    url += ".ZIP";
-    return url;
-}
-
-std::tm get_current_date()
-{
-    std::time_t now = std::time(nullptr);
-    std::tm date;
-#ifdef _WIN32
-    localtime_s(&date, &now);
-#else
-    localtime_r(&now, &date);
-#endif
-    return date;
-}
-
-std::tm get_date(const std::string &date, const std::string &format = "%Y-%m-%d")
-{
-    std::tm date_tm;
-    std::istringstream ss(date);
-    ss >> std::get_time(&date_tm, format.c_str());
-    date_tm.tm_hour = 0;
-    date_tm.tm_min = 0;
-    date_tm.tm_sec = 0;
-    date_tm.tm_isdst = -1;
-    date_tm.tm_wday = 0;
-    date_tm.tm_yday = 0;
-    return date_tm;
-}
-
-std::tm max_date_table(connection_pool &pool)
-{
-    auto connection = pool.get_connection();
-    pqxx::work work(*connection);
-    pqxx::result result = work.exec("SELECT MAX(dt_pregao)+1 FROM tcot_bovespa");
-    auto res1 = result[0];
-    auto res2 = res1[0];
-    if (res2.is_null())
+    switch (type)
     {
-        return get_date("2000-01-01");
+    case Type::DAY:
+        return std::format_to_n(buffer, 10, "{:%d/%m/%Y}", date).size;
+    case Type::MONTH:
+        return std::format_to_n(buffer, 7, "{:%m/%Y}", date).size;
+    case Type::YEAR:
+        return std::format_to_n(buffer, 4, "{:%Y}", date).size;
     }
-    auto value = res2.as<std::string>();
-    if (value.empty())
+    std::unreachable();
+}
+
+std::size_t date_to_string(const date_t &date, Type type, char buffer[8])
+{
+    switch (type)
     {
-        return get_date("2000-01-01");
+    case Type::DAY:
+        return std::format_to_n(buffer, 8, "{:%d%m%Y}", date).size;
+    case Type::MONTH:
+        return std::format_to_n(buffer, 6, "{:%m%Y}", date).size;
+    case Type::YEAR:
+        return std::format_to_n(buffer, 4, "{:%Y}", date).size;
     }
-    std::tm date = get_date(value);
-    return date;
+    std::unreachable();
 }
 
-void unique_values(std::vector<CotBovespa> &cotacoes)
+constexpr char type_to_char(Type type)
 {
-    std::sort(cotacoes.begin(), cotacoes.end(), [](const CotBovespa &lhs, const CotBovespa &rhs)
-              {
-        if (lhs.dt_pregao < rhs.dt_pregao)
-            return true;
-        if (lhs.dt_pregao > rhs.dt_pregao)
-            return false;
-        if (lhs.prz_termo < rhs.prz_termo)
-            return true;
-        if (lhs.prz_termo > rhs.prz_termo)
-            return false;
-        if (lhs.cd_codneg < rhs.cd_codneg)
-            return true;
-        if (lhs.cd_codneg > rhs.cd_codneg)
-            return false;
-        return false; });
-    cotacoes.erase(std::unique(cotacoes.begin(), cotacoes.end(), [](const CotBovespa &lhs, const CotBovespa &rhs)
-                               { return lhs.dt_pregao == rhs.dt_pregao && lhs.prz_termo == rhs.prz_termo && lhs.cd_codneg == rhs.cd_codneg; }),
-                   cotacoes.end());
+    switch (type)
+    {
+    case Type::DAY:
+        return 'D';
+    case Type::MONTH:
+        return 'M';
+    case Type::YEAR:
+        return 'A';
+    }
+    std::unreachable();
 }
 
-template <typename... Args>
-void log_data(std::mutex &mutex, Args &&...args)
+std::string get_url(const date_t &date, const Type type)
 {
-    std::unique_lock<std::mutex> lock(mutex);
-    auto now = std::chrono::system_clock::now();
-    std::cout << now;
-    (std::cout << ... << args);
-    std::cout << "\n";
+    char buffer[8];
+    std::size_t result = date_to_string(date, type, buffer);
+    std::string date_str(buffer, result);
+    return base_url + type_to_char(type) + date_str + ".ZIP";
 }
 
-void execute_for_date(connection_pool &pool, http_client &client, const std::tm &date, const bool annual = false, const bool verbose = false)
+int days_to_epoch(std::tm &date)
 {
+    std::tm epoch = {0, 0, 0, 1, 0, 70};
+    std::time_t epoch_time = std::mktime(&epoch);
+    std::time_t date_time = std::mktime(&date);
+    return static_cast<int>((date_time - epoch_time) / (60 * 60 * 24));
+}
+
+int days_to_epoch(std::chrono::system_clock::time_point &date)
+{
+    return std::chrono::duration_cast<std::chrono::days>(date.time_since_epoch()).count();
+}
+
+void process_lines_csv(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+{
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::ofstream output_file("output.csv", std::ios::binary | std::ios::trunc | std::ios::out);
+    output_file << "Date;BDI;Negotiation Code;ISIN Code;Specification;Market Type;Term;Opening Price;Max Price;Min Price;Average Price;Closing Price;Exercise Price;Expiration Date;Quote Factor;Days in Month\n";
+    CotBovespa cotacao;
+    bool ran = false;
+    while (!done || !ran)
+    {
+        while (queue.try_dequeue(cotacao))
+        {
+            char buffer[212];
+            std::size_t size = parse_csv_line(cotacao, buffer);
+            output_file.write(buffer, size);
+        }
+        ran = true;
+    }
+    output_file.close();
+    std::chrono::system_clock::time_point end = std::chrono::system_clock::now();
+    spdlog::info("Wrote output.csv in {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count());
+}
+
+std::shared_ptr<parquet::schema::GroupNode> GetSchema()
+{
+    parquet::schema::NodeVector fields;
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Date", parquet::Repetition::REQUIRED, parquet::Type::INT32, parquet::ConvertedType::INT_32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("BDI", parquet::Repetition::REQUIRED, parquet::Type::INT32, parquet::ConvertedType::INT_32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Negotiation Code", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY, parquet::ConvertedType::NONE, 16));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("ISIN Code", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY, parquet::ConvertedType::NONE, 16));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Specification", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY, parquet::ConvertedType::NONE, 16));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Market Type", parquet::Repetition::REQUIRED, parquet::Type::INT32, parquet::ConvertedType::INT_32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Term", parquet::Repetition::REQUIRED, parquet::Type::INT32, parquet::ConvertedType::INT_32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Opening Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Max Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Min Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Average Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Closing Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Exercise Price", parquet::Repetition::REQUIRED, parquet::Type::DOUBLE));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Expiration Date", parquet::Repetition::REQUIRED, parquet::Type::INT32, parquet::ConvertedType::INT_32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Quote Factor", parquet::Repetition::REQUIRED, parquet::Type::INT32, parquet::ConvertedType::INT_32));
+    fields.push_back(parquet::schema::PrimitiveNode::Make("Days in Month", parquet::Repetition::REQUIRED, parquet::Type::INT32, parquet::ConvertedType::INT_32));
+    return std::static_pointer_cast<parquet::schema::GroupNode>(parquet::schema::GroupNode::Make("cotacoes", parquet::Repetition::REQUIRED, fields));
+}
+
+void process_lines_parquet(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+{
+    std::shared_ptr<arrow::io::FileOutputStream> output_file;
+    PARQUET_ASSIGN_OR_THROW(output_file, arrow::io::FileOutputStream::Open("output.parquet"));
+    std::shared_ptr<parquet::schema::GroupNode> schema = GetSchema();
+    parquet::WriterProperties::Builder builder;
+    builder.compression(parquet::Compression::SNAPPY);
+    builder.version(parquet::ParquetVersion::PARQUET_2_LATEST);
+    parquet::StreamWriter writer{parquet::ParquetFileWriter::Open(output_file, schema, builder.build())};
+    CotBovespa cotacao;
+    bool ran = false;
     auto start = std::chrono::high_resolution_clock::now();
-    auto date_str = date_to_string(date, "%d/%m/%Y");
-    std::string url = get_url(date, annual);
-    if (verbose)
+    while (!done || !ran)
     {
-        log_data(mtx, " - [EXECUTE_FOR_DATE] - Downloading data for ", date_str);
+        while (queue.try_dequeue(cotacao))
+        {
+            int date = days_to_epoch(cotacao.dt_pregao);
+            int expiration_date = days_to_epoch(cotacao.dt_datven);
+            writer << date;
+            writer << cotacao.cd_codbdi;
+            writer << cotacao.cd_codneg;
+            writer << cotacao.cd_codisin;
+            writer << cotacao.nm_speci;
+            writer << cotacao.cd_tpmerc;
+            writer << cotacao.prz_termo;
+            writer << cotacao.prec_aber;
+            writer << cotacao.prec_max;
+            writer << cotacao.prec_min;
+            writer << cotacao.prec_med;
+            writer << cotacao.prec_fec;
+            writer << cotacao.prec_exer;
+            writer << expiration_date;
+            writer << cotacao.fat_cot;
+            writer << cotacao.nr_dismes;
+            writer.EndRow();
+        }
+        ran = true;
     }
-    auto cotacoes = download_and_parse(client, url);
-    if (verbose)
+    auto end = std::chrono::high_resolution_clock::now();
+    spdlog::info("Wrote output.parquet in {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+}
+
+void process_lines_none(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+{
+    CotBovespa cotacao;
+    bool ran = false;
+    while (!done || !ran)
     {
-        log_data(mtx, " - [EXECUTE_FOR_DATE] - Downloaded data for ", date_str);
-        log_data(mtx, " - [EXECUTE_FOR_DATE] - Retrieved ", cotacoes.size(), " lines for ", date_str);
+        while (queue.try_dequeue(cotacao))
+        {
+            // Do nothing
+        }
+        ran = true;
     }
-    if (cotacoes.empty())
+}
+
+void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done)
+{
+    const constexpr char *connection_string = "dbname=testdb user=postgres password=postgres hostaddr=127.0.0.1 port=5432";
+    const constexpr char *create_temp_table = "CREATE TEMP TABLE temp_cotacoes AS TABLE tcot_bovespa WITH NO DATA";
+    ConnectionPool pool(connection_string, 16);
+    CotBovespa cotacao;
+    auto conn = pool.get_connection();
+    pqxx::work txn(*conn);
+    txn.exec0(create_temp_table);
+    auto start = std::chrono::high_resolution_clock::now();
+    bool ran = false;
+    pqxx::stream_to stream = pqxx::stream_to::table(txn, {"temp_cotacoes"}, {"dt_pregao", "prz_termo", "cd_codneg", "cd_tpmerc", "cd_codbdi", "cd_codisin", "nm_speci", "prec_aber", "prec_max", "prec_min", "prec_med", "prec_fec", "prec_exer", "dt_datven", "fat_cot", "nr_dismes"});
+    while (!done || !ran)
     {
+        while (queue.try_dequeue(cotacao))
+        {
+            std::string_view codneg{cotacao.cd_codneg, 12};
+            std::string_view codisin{cotacao.cd_codisin, 12};
+            std::string_view speci{cotacao.nm_speci, 10};
+            char date_buffer[11];
+            char expiration_date_buffer[11];
+            auto date = cotacao.dt_pregao;
+            auto expiration_date = cotacao.dt_datven;
+            std::string_view date_str(date_buffer, tm_to_string(date, date_buffer));
+            std::string_view expiration_date_str(expiration_date_buffer, tm_to_string(expiration_date, expiration_date_buffer));
+            stream.write_values(date_str, cotacao.prz_termo, codneg, cotacao.cd_tpmerc, cotacao.cd_codbdi, codisin, speci, cotacao.prec_aber, cotacao.prec_max, cotacao.prec_min, cotacao.prec_med, cotacao.prec_fec, cotacao.prec_exer, expiration_date_str, cotacao.fat_cot, cotacao.nr_dismes);
+        }
+        ran = true;
+    }
+    stream.complete();
+    spdlog::info("Created temp table");
+    const constexpr char *insert_into_table = "INSERT INTO tcot_bovespa SELECT * FROM temp_cotacoes ON CONFLICT DO NOTHING";
+    spdlog::info("Inserting quotes into tcot_bovespa table");
+    txn.exec0(insert_into_table);
+    txn.commit();
+    auto end = std::chrono::high_resolution_clock::now();
+    spdlog::info("Inserted quotes in {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+}
+
+void download_quotes(DownloadParameters parameters)
+{
+    parameters.semaphore.acquire();
+    char buffer[10];
+    auto result = date_to_log(parameters.date, parameters.type, buffer);
+    std::string_view date_str(buffer, result);
+    auto start = std::chrono::high_resolution_clock::now();
+    std::string url = get_url(parameters.date, parameters.type);
+    std::string content = http_client::get(url.data());
+    if (content.empty())
+    {
+        spdlog::error("Failed to download {} for date {}", url, date_str);
+        parameters.semaphore.release();
         return;
     }
-    unique_values(cotacoes);
-    insert_into_table(pool, cotacoes);
+    zip_archive zip(content);
     auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    if (verbose)
+    spdlog::info("Downloaded {} for date {} in {} ms", url, date_str, std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+    std::atomic<bool> done = false;
+    start = std::chrono::high_resolution_clock::now();
+    int count = read_quote_file(zip, parameters.queue);
+    parameters.count += count;
+    end = std::chrono::high_resolution_clock::now();
+    std::chrono::nanoseconds execution_time = end - start;
     {
-        log_data(mtx, " - [EXECUTE_FOR_DATE] - Done for ", date_to_string(date, "%d/%m/%Y"), " in ", elapsed.count(), " ms");
+        std::lock_guard<std::mutex> lock(parameters.sum_mutex);
+        parameters.total_time += execution_time;
     }
-}
-
-void run_for_dates(const std::string &dates, connection_pool &pool, http_client &client, thread_pool &threads, bool annual = false, bool verbose = false)
-{
-    std::istringstream ss(dates);
-    std::string date;
-    while (std::getline(ss, date, ','))
-    {
-        std::tm date_tm = get_date(date);
-        threads.enqueue(execute_for_date, std::ref(pool), std::ref(client), date_tm, annual, verbose);
-    }
-}
-
-void run_for_range(const std::string &start_date, const std::string &end_date, connection_pool &pool, http_client &client, thread_pool &threads, bool verbose = false)
-{
-    std::tm start = get_date(start_date);
-    std::tm end = get_date(end_date);
-    std::tm current = start;
-    while (current <= end)
-    {
-        threads.enqueue(execute_for_date, std::ref(pool), std::ref(client), current, false, verbose);
-        current.tm_mday++;
-        std::mktime(&current);
-    }
+    parameters.semaphore.release();
+    spdlog::info("Downloaded {} quotes in {} ms for date {}", count, std::chrono::duration_cast<std::chrono::milliseconds>(execution_time).count(), date_str);
 }
 
 int main(int argc, char **argv)
 {
-    bool annual = false;
-    bool verbose = false;
-    unsigned int num_threads = std::thread::hardware_concurrency();
-    std::string connection_string = "dbname=testdb user=postgres password=postgres hostaddr=127.0.0.1 port=5432";
-    cxxopts::Options options("Bovespa downloader", "Download Bovespa data");
-    options.add_options()
-    ("a,annual", "Download annual data", cxxopts::value<bool>(annual))
-    ("v,verbose", "Verbose output", cxxopts::value<bool>(verbose))
-    ("d,dates", "Download data for specific dates", cxxopts::value<std::string>())
-    ("s,start-date", "Start date for download", cxxopts::value<std::string>())
-    ("e,end-date", "End date for download", cxxopts::value<std::string>())
-    ("c,connection", "Connection string", cxxopts::value<std::string>(connection_string))
-    ("t,threads", "Number of threads", cxxopts::value<unsigned int>(num_threads)->default_value(std::to_string(num_threads)))
-    ("h,help", "Print usage");
-    auto result = options.parse(argc, argv);
-    if (result.count("help"))
+    if(argc < 3)
     {
-        std::cout << options.help() << "\n";
-        return 0;
+        spdlog::error("Usage: {} <start_date> <end_date>", argv[0]);
+        return 1;
     }
-    connection_pool pool(connection_string, num_threads);
-    http_client client;
-    thread_pool threads(num_threads);
-    if (result.count("dates"))
+    std::counting_semaphore<> semaphore(16);
+    std::chrono::nanoseconds total_time = std::chrono::nanoseconds::zero();
+    std::atomic<int> count = 0;
+    std::mutex sum_mutex;
+    std::istringstream start_date_stream(argv[1]);
+    std::istringstream end_date_stream(argv[2]);
+    date_t start_date;
+    start_date_stream >> std::chrono::parse("%Y-%m-%d", start_date);
+    if(!start_date_stream)
     {
-        auto start = std::chrono::high_resolution_clock::now();
-        std::string dates = result["dates"].as<std::string>();
-        run_for_dates(dates, pool, client, threads, annual, verbose);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        if (verbose)
-        {
-            log_data(mtx, " - [MAIN] - Done in ", elapsed.count(), " ms");
-        }
-        return 0;
+        spdlog::error("Invalid start date");
+        return 1;
     }
-    if (result.count("start-date") && result.count("end-date"))
+    date_t end_date;
+    end_date_stream >> std::chrono::parse("%Y-%m-%d", end_date);
+    if(!end_date_stream)
     {
-        auto start = std::chrono::high_resolution_clock::now();
-        std::string start_date = result["start-date"].as<std::string>();
-        std::string end_date = result["end-date"].as<std::string>();
-        run_for_range(start_date, end_date, pool, client, threads, verbose);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        if (verbose)
-        {
-            log_data(mtx, " - [MAIN] - Done in ", elapsed.count(), " ms");
-        }
-        return 0;
+        spdlog::error("Invalid end date");
+        return 1;
     }
-    auto start = std::chrono::high_resolution_clock::now();
-    std::tm date = max_date_table(pool);
-    std::tm current_date = get_current_date();
-    if (verbose)
+    if(start_date > end_date)
     {
-        log_data(mtx, " - [MAIN] - Max date in table: ", date_to_string(date, "%d/%m/%Y"));
-        log_data(mtx, " - [MAIN] - Current date: ", date_to_string(current_date, "%d/%m/%Y"));
+        spdlog::error("Start date is greater than end date");
+        return 1;
     }
-    run_for_range(date_to_string(date, "%Y-%m-%d"), date_to_string(current_date, "%Y-%m-%d"), pool, client, threads, verbose);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    if (verbose)
+    moodycamel::ConcurrentQueue<CotBovespa> queue;
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::vector<std::thread> threads;
+    threads.reserve(std::chrono::duration_cast<std::chrono::months>(end_date - start_date).count() + 1);
+    while(start_date <= now && start_date <= end_date)
     {
-        log_data(mtx, " - [MAIN] - Done in ", elapsed.count(), " ms");
+        DownloadParameters parameters{semaphore, sum_mutex, start_date, Type::MONTH, total_time, count, queue};
+        threads.emplace_back(download_quotes, parameters);
+        start_date += std::chrono::months(1);
     }
+    std::atomic<bool> done = false;
+    std::jthread writer(process_lines_parquet, std::ref(queue), std::ref(done));
+    for (auto &thread : threads)
+    {
+        thread.join();
+    }
+    done = true;
+    writer.join();
+    spdlog::info("Downloaded {} quotes in {} ms", count.load(), std::chrono::duration_cast<std::chrono::milliseconds>(total_time).count());
     return 0;
 }

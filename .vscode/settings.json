@@ -112,6 +112,7 @@
         "semaphore": "cpp",
         "source_location": "cpp",
         "strstream": "cpp",
-        "syncstream": "cpp"
+        "syncstream": "cpp",
+        "stdfloat": "cpp"
     }
 }

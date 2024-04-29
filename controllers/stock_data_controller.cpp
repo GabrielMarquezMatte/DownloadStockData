@@ -6,7 +6,7 @@
 #include <string>
 #include <nlohmann/json.hpp>
 
-std::string GetStockData(std::shared_ptr<connection_pool> &pool,const std::string &symbol, const std::string &start_date, const std::string &end_date)
+std::string GetStockData(std::shared_ptr<ConnectionPool> &pool,const std::string &symbol, const std::string &start_date, const std::string &end_date)
 {
     const std::string query = "SELECT * FROM tcot_bovespa WHERE cd_codneg = $1 AND dt_pregao BETWEEN $2 AND $3 ORDER BY dt_pregao ASC";
     auto connection = pool->get_connection();
@@ -37,12 +37,10 @@ std::string GetStockData(std::shared_ptr<connection_pool> &pool,const std::strin
             json_data.push_back(json_cot);
         }
         work.commit();
-        pool->return_connection(connection);
         return json_data.dump();
     }
     catch (const std::exception &e)
     {
-        pool->return_connection(connection);
         std::cerr << e.what() << '\n';
         return "[]";
     }

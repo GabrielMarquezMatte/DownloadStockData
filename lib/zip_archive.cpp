@@ -2,58 +2,73 @@
 #include <iostream>
 #include <memory>
 
-zip_archive::zip_archive(const std::string& content_buffer)
+inline void close_zip_archive(zip_t* zip_file, zip_file_t* inner_file, char* file_buffer)
 {
-    zip_source = zip_source_buffer_create(content_buffer.c_str(), content_buffer.size(), 0, nullptr);
+    if(inner_file != nullptr)
+    {
+        zip_fclose(inner_file);
+    }
+    if(zip_file != nullptr)
+    {
+        zip_close(zip_file);
+    }
+    if(file_buffer != nullptr)
+    {
+        delete[] file_buffer;
+    }
+}
+
+zip_archive::zip_archive(const std::string_view& content_buffer)
+{
+    zip_source = zip_source_buffer_create(content_buffer.data(), content_buffer.size(), 0, nullptr);
     if (zip_source == nullptr)
     {
         throw std::runtime_error("Failed to create zip source buffer");
     }
     zip_file = zip_open_from_source(zip_source, 0, nullptr);
+    if (zip_file == nullptr)
+    {
+        throw std::runtime_error("Failed to open zip file");
+    }
+    inner_file = zip_fopen_index(zip_file, 0, 0);
+    if (inner_file == nullptr)
+    {
+        close_zip_archive(zip_file, inner_file, file_buffer);
+        throw std::runtime_error("Failed to open inner file");
+    }
+    zip_stat_t stat;
+    if(zip_stat_index(zip_file, 0, 0, &stat) == -1)
+    {
+        close_zip_archive(zip_file, inner_file, file_buffer);
+        throw std::runtime_error("Failed to get file stat");
+    }
+    file_buffer_size = stat.size;
+    file_buffer = new char[stat.size];
+    if(file_buffer == nullptr)
+    {
+        close_zip_archive(zip_file, inner_file, file_buffer);
+        throw std::runtime_error("Failed to allocate file buffer");
+    }
+    if(zip_fread(inner_file, file_buffer, stat.size) == -1)
+    {
+        close_zip_archive(zip_file, inner_file, file_buffer);
+        throw std::runtime_error("Failed to read file");
+    }
+    file_buffer_index = 0;
 }
 
 zip_archive::~zip_archive()
 {
-    zip_close(zip_file);
+    close_zip_archive(zip_file, inner_file, file_buffer);
 }
 
-std::vector<std::string> zip_archive::get_filenames()
+bool zip_archive::next_line(char line[247])
 {
-    std::vector<std::string> filenames;
-    zip_int64_t num_entries = zip_get_num_entries(zip_file, ZIP_FL_UNCHANGED);
-    for (zip_int64_t i = 0; i < num_entries; i++)
+    if(file_buffer_index + 247 > file_buffer_size)
     {
-        const char *filename = zip_get_name(zip_file, i, ZIP_FL_ENC_GUESS);
-        if (filename == nullptr)
-        {
-            throw std::runtime_error("Failed to get filename");
-        }
-        filenames.push_back(filename);
+        return false;
     }
-    return filenames;
-}
-
-std::string zip_archive::get_file_content(const std::string& filename)
-{
-    std::string content;
-    zip_stat_t stat;
-    if (zip_stat(zip_file, filename.c_str(), ZIP_FL_ENC_GUESS, &stat) != 0)
-    {
-        throw std::runtime_error("Failed to get file stat");
-    }
-    zip_file_t *file = zip_fopen(zip_file, filename.c_str(), ZIP_FL_ENC_GUESS);
-    if (file == nullptr)
-    {
-        throw std::runtime_error("Failed to open file");
-    }
-    std::unique_ptr<char[]> buffer(new char[stat.size]);
-    if (zip_fread(file, buffer.get(), stat.size) < 0)
-    {
-        zip_fclose(file);
-        zip_close(zip_file);
-        throw std::runtime_error("Failed to read file");
-    }
-    content = std::string(buffer.get(), stat.size);
-    zip_fclose(file);
-    return content;
+    std::memcpy(line, file_buffer + file_buffer_index, 247);
+    file_buffer_index += 247;
+    return true;
 }
