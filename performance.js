@@ -5,7 +5,7 @@ export default function () {
   const headers = {
     "Content-Type": "application/json",
   }
-  let res = http.get('http://localhost/petr4/2015-01-01/2024-01-01', { headers: headers })
+  let res = http.get('http://localhost/petr4/2023-01-01/2024-01-01', { headers: headers })
   check(res, { 'success login': (r) => r.status === 200 })
 }
 export const options = {

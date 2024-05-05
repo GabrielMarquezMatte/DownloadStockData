@@ -28,6 +28,7 @@ find_package(Drogon CONFIG REQUIRED)
 add_subdirectory(${PROJECT_SOURCE_DIR}/lib)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src)
 add_subdirectory(${PROJECT_SOURCE_DIR}/controllers)
+add_subdirectory(${PROJECT_SOURCE_DIR}/filters)
 
 add_executable(${PROJECT_NAME} main.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE libpqxx::pqxx)
@@ -40,10 +41,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::concurrentqueue::concu
 target_link_libraries(${PROJECT_NAME} PRIVATE "$<IF:$<BOOL:${ARROW_BUILD_STATIC}>,Parquet::parquet_static,Parquet::parquet_shared>")
 target_link_libraries(${PROJECT_NAME} PRIVATE "$<IF:$<BOOL:${ARROW_BUILD_STATIC}>,Arrow::arrow_static,Arrow::arrow_shared>")
 
-FILE(GLOB API_SOURCE_FILES api.cpp ${PROJECT_SOURCE_DIR}/controllers/*.cpp)
-
 add_executable(StockDataApi api.cpp)
-target_link_libraries(StockDataApi PRIVATE libpqxx::pqxx download_lib Drogon::Drogon stock_controllers)
+target_link_libraries(StockDataApi PRIVATE libpqxx::pqxx download_lib Drogon::Drogon stock_controllers stock_filters)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
