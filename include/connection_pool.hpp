@@ -1,7 +1,6 @@
 #pragma once
 #include <pqxx/connection>
 #include <string>
-#include <mutex>
 #include <memory>
 #include <boost/pool/object_pool.hpp>
 

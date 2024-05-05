@@ -33,11 +33,21 @@ void copyBytesAligned(char *dest, const char *src)
 }
 std::size_t tm_to_string(const std::tm& tm, char output[11])
 {
-    if(tm.tm_year < -1900 || tm.tm_year > 8099)
-    {
-        return 0;
-    }
-    return std::strftime(output, 11, "%Y-%m-%d", &tm);
+    int year = tm.tm_year + 1900;
+    int month = tm.tm_mon + 1;
+    int day = tm.tm_mday;
+    output[0] = '0' + static_cast<char>(year / 1000);
+    output[1] = '0' + static_cast<char>((year % 1000) / 100);
+    output[2] = '0' + static_cast<char>((year % 100) / 10);
+    output[3] = '0' + static_cast<char>(year % 10);
+    output[4] = '-';
+    output[5] = '0' + static_cast<char>(month / 10);
+    output[6] = '0' + static_cast<char>(month % 10);
+    output[7] = '-';
+    output[8] = '0' + static_cast<char>(day / 10);
+    output[9] = '0' + static_cast<char>(day % 10);
+    output[10] = '\0';
+    return 10;
 }
 std::size_t int_to_string(int value, char output[10])
 {

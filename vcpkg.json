@@ -7,8 +7,6 @@
         "curl",
         "libzip",
         "cxxopts",
-        "restbed",
-        "nlohmann-json",
         "spdlog",
         "fmt",
         "concurrentqueue",
@@ -18,7 +16,8 @@
                 "parquet"
             ]
         },
-        "boost-pool"
+        "boost-pool",
+        "drogon"
     ],
-    "builtin-baseline": "da4b78d35084ec4e9808aa02017028da03b8d2ab"
+    "builtin-baseline": "326d8b43e365352ba3ccadf388d989082fe0f2a6"
 }

@@ -18,16 +18,16 @@ enable_testing()
 
 find_package(libpqxx CONFIG REQUIRED)
 find_package(cxxopts CONFIG REQUIRED)
-find_package(unofficial-restbed CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-concurrentqueue CONFIG REQUIRED)
 find_package(Arrow CONFIG REQUIRED)
 find_package(Parquet CONFIG REQUIRED)
+find_package(Drogon CONFIG REQUIRED)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/lib)
 add_subdirectory(${PROJECT_SOURCE_DIR}/src)
+add_subdirectory(${PROJECT_SOURCE_DIR}/controllers)
 
 add_executable(${PROJECT_NAME} main.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE libpqxx::pqxx)
@@ -42,9 +42,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE "$<IF:$<BOOL:${ARROW_BUILD_STATIC}
 
 FILE(GLOB API_SOURCE_FILES api.cpp ${PROJECT_SOURCE_DIR}/controllers/*.cpp)
 
-add_executable(StockDataApi ${API_SOURCE_FILES})
-target_link_libraries(StockDataApi PRIVATE unofficial::restbed::restbed libpqxx::pqxx download_lib)
-target_link_libraries(StockDataApi PRIVATE cxxopts::cxxopts nlohmann_json::nlohmann_json)
+add_executable(StockDataApi api.cpp)
+target_link_libraries(StockDataApi PRIVATE libpqxx::pqxx download_lib Drogon::Drogon stock_controllers)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

@@ -228,7 +228,12 @@ void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, cons
     {
         while (queue.try_dequeue(cotacao) && !token.stop_requested())
         {
-            std::string_view codneg{cotacao.cd_codneg, 12};
+            std::size_t size = 0;
+            while(cotacao.cd_codneg[size] != '\0' && cotacao.cd_codneg[size] != ' ' && size < 12)
+            {
+                size++;
+            }
+            std::string_view codneg{cotacao.cd_codneg, size};
             std::string_view codisin{cotacao.cd_codisin, 12};
             std::string_view speci{cotacao.nm_speci, 10};
             char date_buffer[11];
@@ -345,7 +350,7 @@ int main(int argc, char **argv)
         start_date += std::chrono::months(1);
     }
     std::atomic<bool> done = false;
-    std::jthread writer(process_lines_csv, std::ref(queue), std::ref(done), token);
+    std::jthread writer(process_lines_postgres, std::ref(queue), std::ref(done), token);
     for (auto &thread : threads)
     {
         thread.join();
