@@ -3,13 +3,14 @@ void RateLimitFilter::doFilter(const drogon::HttpRequestPtr &req,
                          drogon::FilterCallback &&fcb,
                          drogon::FilterChainCallback &&fccb)
 {
-    auto addr = req->peerAddr();
+    const trantor::InetAddress &addr = req->peerAddr();
     uint32_t ip = addr.ipNetEndian();
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_rate_limit.find(ip);
     if(it == m_rate_limit.end())
     {
         m_rate_limit.insert_or_assign(ip, std::make_tuple(0, std::chrono::system_clock::now()));
+        fccb();
         return;
     }
     auto now = std::chrono::system_clock::now();

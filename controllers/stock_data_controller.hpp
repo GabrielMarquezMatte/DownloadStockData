@@ -5,17 +5,18 @@
 #include <tuple>
 #include <thread>
 #include <trantor/utils/Date.h>
+#include <json/json.h>
 
 class StockDataController final : public drogon::HttpController<StockDataController, false>
 {
 private:
-    std::unordered_map<std::string, std::tuple<std::string, std::chrono::system_clock::time_point>> m_cache;
+    std::unordered_map<std::string, std::tuple<Json::Value, std::chrono::system_clock::time_point>> m_cache;
     std::jthread m_cache_thread{&StockDataController::CheckCache, this};
     drogon::HttpAppFramework &m_app;
     std::mutex m_mutex;
     void CheckCache();
-    void InsertCache(const std::string &key, const std::string &value);
-    std::string& GetCache(const std::string &key);
+    void InsertCache(const std::string &key, const Json::Value &value);
+    Json::Value& GetCache(const std::string &key);
     bool CacheHit(const std::string &key);
 public:
     StockDataController(drogon::HttpAppFramework &app) : m_app(app) {}

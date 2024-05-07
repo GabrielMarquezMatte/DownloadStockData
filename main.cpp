@@ -248,7 +248,7 @@ void process_lines_postgres(moodycamel::ConcurrentQueue<CotBovespa> &queue, cons
     }
     stream.complete();
     spdlog::info("Created temp table");
-    const constexpr char *insert_into_table = "INSERT INTO tcot_bovespa SELECT * FROM temp_cotacoes ON CONFLICT DO NOTHING";
+    const constexpr char *insert_into_table = "INSERT INTO tcot_bovespa SELECT temp_cotacoes.* FROM temp_cotacoes LEFT JOIN tcot_bovespa ON temp_cotacoes.dt_pregao = tcot_bovespa.dt_pregao AND temp_cotacoes.cd_codneg = tcot_bovespa.cd_codneg WHERE tcot_bovespa.dt_pregao IS NULL";
     spdlog::info("Inserting quotes into tcot_bovespa table");
     txn.exec0(insert_into_table);
     txn.commit();

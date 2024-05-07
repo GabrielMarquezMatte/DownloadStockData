@@ -11,7 +11,7 @@ int main()
     app.setThreadNum(16);
     app.setLogPath("./").setLogLevel(trantor::Logger::kInfo);
     app.loadConfigFile("./config.json");
-    app.registerFilter(std::make_shared<RateLimitFilter>(10, 1s));
+    app.registerFilter(std::make_shared<RateLimitFilter>(100, 1s));
     app.registerController(std::make_shared<StockDataController>(app));
     app.run();
 }
