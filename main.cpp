@@ -18,6 +18,7 @@
 #include "connection_pool.hpp"
 #include <pqxx/pqxx>
 #include <stop_token>
+#include <optional>
 
 using date_t = std::chrono::system_clock::time_point;
 
@@ -290,7 +291,8 @@ void download_quotes(DownloadParameters parameters, std::stop_token token)
 
 void stop_requested(std::stop_source &source)
 {
-    std::thread([&source]() {
+    std::thread([&source]()
+                {
         std::string line;
         while (std::getline(std::cin, line))
         {
@@ -300,15 +302,47 @@ void stop_requested(std::stop_source &source)
                 spdlog::warn("Stop requested");
                 return;
             }
-        }
-    }).detach();
+        } })
+        .detach();
+}
+
+std::optional<Type> parse_type(const char type)
+{
+    switch (type)
+    {
+    case 'D':
+        return Type::DAY;
+    case 'M':
+        return Type::MONTH;
+    case 'A':
+        return Type::YEAR;
+    default:
+        return std::nullopt;
+    }
+}
+
+std::optional<OutputType> parse_output_type(const char type)
+{
+    switch (type)
+    {
+    case 'C':
+        return OutputType::CSV;
+    case 'P':
+        return OutputType::PARQUET;
+    case 'N':
+        return OutputType::None;
+    case 'S':
+        return OutputType::POSTGRES;
+    default:
+        return std::nullopt;
+    }
 }
 
 int main(int argc, char **argv)
 {
-    if (argc < 3)
+    if (argc < 5)
     {
-        spdlog::error("Usage: {} <start_date> <end_date>", argv[0]);
+        spdlog::error("Usage: {} <start_date> <end_date> <type> <output_type>", argv[0]);
         return 1;
     }
     std::counting_semaphore<> semaphore(16);
@@ -336,6 +370,18 @@ int main(int argc, char **argv)
         spdlog::error("Start date is greater than end date");
         return 1;
     }
+    std::optional<Type> type = parse_type(argv[3][0]);
+    if(!type.has_value())
+    {
+        spdlog::error("Invalid type {} must be D, M or A", argv[3][0]);
+        return 1;
+    }
+    std::optional<OutputType> output_type = parse_output_type(argv[4][0]);
+    if(!output_type.has_value())
+    {
+        spdlog::error("Invalid output type {} must be CSV, PARQUET, POSTGRES or NONE", argv[4]);
+        return 1;
+    }
     moodycamel::ConcurrentQueue<CotBovespa> queue;
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::vector<std::thread> threads;
@@ -345,12 +391,38 @@ int main(int argc, char **argv)
     stop_requested(source);
     while (start_date <= now && start_date <= end_date)
     {
-        DownloadParameters parameters{semaphore, sum_mutex, start_date, Type::MONTH, total_time, count, queue};
+        DownloadParameters parameters{semaphore, sum_mutex, start_date, *type, total_time, count, queue};
         threads.emplace_back(download_quotes, parameters, token);
-        start_date += std::chrono::months(1);
+        switch (*type)
+        {
+        case Type::DAY:
+            start_date += std::chrono::hours(24);
+            break;
+        case Type::MONTH:
+            start_date += std::chrono::months(1);
+            break;
+        case Type::YEAR:
+            start_date += std::chrono::years(1);
+            break;
+        }
     }
     std::atomic<bool> done = false;
-    std::jthread writer(process_lines_postgres, std::ref(queue), std::ref(done), token);
+    std::jthread writer;
+    switch (*output_type)
+    {
+    case OutputType::CSV:
+        writer = std::jthread(process_lines_csv, std::ref(queue), std::ref(done), token);
+        break;
+    case OutputType::PARQUET:
+        writer = std::jthread(process_lines_parquet, std::ref(queue), std::ref(done), token);
+        break;
+    case OutputType::None:
+        writer = std::jthread(process_lines_none, std::ref(queue), std::ref(done), token);
+        break;
+    case OutputType::POSTGRES:
+        writer = std::jthread(process_lines_postgres, std::ref(queue), std::ref(done), token);
+        break;
+    }
     for (auto &thread : threads)
     {
         thread.join();

@@ -42,7 +42,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE "$<IF:$<BOOL:${ARROW_BUILD_STATIC}
 target_link_libraries(${PROJECT_NAME} PRIVATE "$<IF:$<BOOL:${ARROW_BUILD_STATIC}>,Arrow::arrow_static,Arrow::arrow_shared>")
 
 add_executable(StockDataApi api.cpp)
-target_link_libraries(StockDataApi PRIVATE libpqxx::pqxx download_lib Drogon::Drogon stock_controllers stock_filters)
+target_link_libraries(StockDataApi PRIVATE download_lib Drogon::Drogon stock_controllers stock_filters)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
