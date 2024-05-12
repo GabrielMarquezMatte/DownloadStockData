@@ -7,7 +7,7 @@
             "request": "launch",
             // Resolved by CMake Tools:
             "program": "${command:cmake.launchTargetPath}",
-            "args": ["2023-01-01", "2023-02-01"],
+            "args": ["2023-01-01", "2023-02-01", "M", "CSV"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [

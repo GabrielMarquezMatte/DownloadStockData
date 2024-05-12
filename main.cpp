@@ -338,6 +338,22 @@ std::optional<OutputType> parse_output_type(const char type)
     }
 }
 
+std::jthread create_writer_thread(OutputType output_type, moodycamel::ConcurrentQueue<CotBovespa> &queue, const std::atomic<bool> &done, std::stop_token token)
+{
+    switch (output_type)
+    {
+    case OutputType::CSV:
+        return std::jthread(process_lines_csv, std::ref(queue), std::ref(done), token);
+    case OutputType::PARQUET:
+        return std::jthread(process_lines_parquet, std::ref(queue), std::ref(done), token);
+    case OutputType::None:
+        return std::jthread(process_lines_none, std::ref(queue), std::ref(done), token);
+    case OutputType::POSTGRES:
+        return std::jthread(process_lines_postgres, std::ref(queue), std::ref(done), token);
+    }
+    std::unreachable();
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 5)
@@ -407,22 +423,7 @@ int main(int argc, char **argv)
         }
     }
     std::atomic<bool> done = false;
-    std::jthread writer;
-    switch (*output_type)
-    {
-    case OutputType::CSV:
-        writer = std::jthread(process_lines_csv, std::ref(queue), std::ref(done), token);
-        break;
-    case OutputType::PARQUET:
-        writer = std::jthread(process_lines_parquet, std::ref(queue), std::ref(done), token);
-        break;
-    case OutputType::None:
-        writer = std::jthread(process_lines_none, std::ref(queue), std::ref(done), token);
-        break;
-    case OutputType::POSTGRES:
-        writer = std::jthread(process_lines_postgres, std::ref(queue), std::ref(done), token);
-        break;
-    }
+    std::jthread writer = create_writer_thread(*output_type, queue, done, token);
     for (auto &thread : threads)
     {
         thread.join();
