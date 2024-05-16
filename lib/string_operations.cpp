@@ -1,5 +1,6 @@
 #include "../include/string_operations.hpp"
 #include <xmmintrin.h>
+#include <immintrin.h>
 std::tm string_to_tm(const std::string_view &date)
 {
     std::tm tm;

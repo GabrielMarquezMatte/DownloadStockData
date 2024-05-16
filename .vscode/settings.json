@@ -114,6 +114,7 @@
         "strstream": "cpp",
         "syncstream": "cpp",
         "stdfloat": "cpp",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "resumable": "cpp"
     }
 }
